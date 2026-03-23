@@ -32,10 +32,10 @@ export function SiteHeader({ brand }) {
       <div
         className={`mx-auto flex w-full max-w-[1500px] items-center justify-between gap-4 rounded-[30px] border border-black/12 ${HEADER_SURFACE} px-4 py-4 shadow-soft md:px-5`}
       >
-        <Link href="/" className="flex min-w-0 items-center gap-3">
+        <Link href="/" className="flex min-w-0 items-center gap-1.5">
           <span className="relative block h-[72px] w-[210px] shrink-0 overflow-visible">
             <Image
-              src="/picture/baad-logo-latest.png"
+              src="/picture/baad-logo-newest.png"
               alt="BAAD logo"
               fill
               sizes="210px"
@@ -44,13 +44,18 @@ export function SiteHeader({ brand }) {
             />
           </span>
 
-          <div className="-ml-1 min-w-0">
+          <div className="-ml-4 min-w-0">
             <p className="truncate font-display text-[1.45rem] leading-none text-slate-950 md:text-[1.7rem]">
               {brand}
             </p>
-            <p className="mt-1 text-[11px] uppercase tracking-[0.3em] text-slate-500">
-              BAAD
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                BAAD
+              </p>
+              <p className="text-xs leading-5 text-slate-600 md:text-[13px]">
+                专为建筑师打造，激发灵感的 AI 辅助工具
+              </p>
+            </div>
           </div>
         </Link>
 
