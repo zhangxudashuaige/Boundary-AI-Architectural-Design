@@ -2,6 +2,7 @@ process.env.NODE_ENV = 'production';
 process.env.LOG_LEVEL = 'silent';
 process.env.MOCK_RENDER_DELAY_MS = '100';
 process.env.AI_PROVIDER = 'MOCK';
+process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3001';
 
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
@@ -32,6 +33,93 @@ const testHealth = async (baseUrl) => {
   assert.equal(body.status, 'ok');
   assert.equal(body.service, 'ai-arch-render-backend');
   assert.ok(!Number.isNaN(Date.parse(body.timestamp)));
+};
+
+const testDatabaseHealth = async (baseUrl) => {
+  const response = await fetch(`${baseUrl}/health/db`);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.status, 'ok');
+  assert.equal(body.connected, true);
+  assert.equal(typeof body.database, 'string');
+  assert.equal(typeof body.latencyMs, 'number');
+  assert.ok(!Number.isNaN(Date.parse(body.serverTime)));
+  assert.ok(!Number.isNaN(Date.parse(body.timestamp)));
+};
+
+const testCors = async (baseUrl) => {
+  const healthResponse = await fetch(`${baseUrl}/health`, {
+    headers: {
+      Origin: 'http://localhost:3001'
+    }
+  });
+
+  assert.equal(
+    healthResponse.headers.get('access-control-allow-origin'),
+    'http://localhost:3001'
+  );
+  assert.match(healthResponse.headers.get('vary') || '', /Origin/i);
+
+  const preflightResponse = await fetch(`${baseUrl}/api/upload`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'http://localhost:3001',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type'
+    }
+  });
+
+  assert.equal(preflightResponse.status, 204);
+  assert.equal(
+    preflightResponse.headers.get('access-control-allow-origin'),
+    'http://localhost:3001'
+  );
+  assert.match(
+    preflightResponse.headers.get('access-control-allow-methods') || '',
+    /POST/
+  );
+  assert.match(
+    preflightResponse.headers.get('access-control-allow-headers') || '',
+    /Content-Type/i
+  );
+};
+
+const testPromptRefine = async (baseUrl) => {
+  const rawPrompt =
+    'render this building as a modern villa with glass, concrete, timber, and warm sunset light';
+  const response = await fetch(`${baseUrl}/api/prompt/refine`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      rawPrompt
+    })
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.rawPrompt, rawPrompt);
+  assert.match(body.refinedPrompt, /architectural visualization/i);
+  assert.match(body.refinedPrompt, /photorealistic architectural rendering/i);
+};
+
+const testPromptRefineValidation = async (baseUrl) => {
+  const response = await fetch(`${baseUrl}/api/prompt/refine`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      rawPrompt: '   '
+    })
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.message, 'rawPrompt is required');
 };
 
 const testUpload = async (baseUrl) => {
@@ -89,6 +177,10 @@ const testRenderFlow = async (baseUrl, imageUrl) => {
     createBody.data.task.renderPrompt,
     'modern concrete villa with warm sunset lighting'
   );
+  assert.match(
+    createBody.data.task.optimizedPrompt,
+    /photorealistic architectural rendering/
+  );
   assert.equal(createBody.data.task.analysisStatus, 'skipped');
   assert.equal(createBody.data.task.renderStatus, 'pending');
   assert.match(createBody.data.task.status, /^(pending|processing)$/);
@@ -128,10 +220,56 @@ const testRenderFlow = async (baseUrl, imageUrl) => {
   );
   assert.match(
     fetchedTask.resultImageUrl,
-    /^https:\/\/mock-render\.local\/results\/render-task-\d+\.webp$/
+    /^https:\/\/mock-render\.local\/results\/image-edit-[0-9a-f-]+\.webp$/
   );
 
-  await query('DELETE FROM render_tasks WHERE id = $1', [taskId]);
+  return fetchedTask;
+};
+
+const testRenderHistory = async (baseUrl, expectedTaskId) => {
+  const response = await fetch(`${baseUrl}/api/render?limit=10&offset=0`);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.ok(Array.isArray(body.data.tasks));
+  assert.equal(body.data.pagination.count >= 1, true);
+
+  const task = body.data.tasks.find((item) => item.id === expectedTaskId);
+
+  assert.ok(task);
+  assert.equal(task.id, expectedTaskId);
+  assert.equal(task.status, 'completed');
+};
+
+const testRenderResultDownload = async (baseUrl, taskId) => {
+  const response = await fetch(`${baseUrl}/api/render/${taskId}/download`);
+  const body = Buffer.from(await response.arrayBuffer());
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.match(
+    response.headers.get('content-disposition') || '',
+    new RegExp(`attachment; filename="render-result-${taskId}\\.png"`)
+  );
+  assert.equal(body.equals(tinyPngBuffer), true);
+};
+
+const testDeleteRenderTask = async (baseUrl, taskId) => {
+  const deleteResponse = await fetch(`${baseUrl}/api/render/${taskId}`, {
+    method: 'DELETE'
+  });
+  const deleteBody = await deleteResponse.json();
+
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(deleteBody.success, true);
+  assert.equal(deleteBody.data.task.id, taskId);
+
+  const fetchResponse = await fetch(`${baseUrl}/api/render/${taskId}`);
+  const fetchBody = await fetchResponse.json();
+
+  assert.equal(fetchResponse.status, 404);
+  assert.equal(fetchBody.message, 'Render task not found');
 };
 
 const run = async () => {
@@ -146,8 +284,15 @@ const run = async () => {
 
     await applySchemaMigration();
     await testHealth(baseUrl);
+    await testDatabaseHealth(baseUrl);
+    await testCors(baseUrl);
+    await testPromptRefine(baseUrl);
+    await testPromptRefineValidation(baseUrl);
     uploadResult = await testUpload(baseUrl);
-    await testRenderFlow(baseUrl, uploadResult.url);
+    const renderedTask = await testRenderFlow(baseUrl, uploadResult.url);
+    await testRenderHistory(baseUrl, renderedTask.id);
+    await testRenderResultDownload(baseUrl, renderedTask.id);
+    await testDeleteRenderTask(baseUrl, renderedTask.id);
 
     console.log('PASS test/api.smoke.js');
   } finally {

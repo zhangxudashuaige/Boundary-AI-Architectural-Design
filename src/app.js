@@ -3,6 +3,7 @@ const pinoHttp = require('pino-http');
 
 const { logger } = require('./config/logger');
 const { ensureUploadsDirectory, uploadsDirectory } = require('./config/storage');
+const { corsMiddleware } = require('./middlewares/cors.middleware');
 const routes = require('./routes');
 const { notFoundHandler } = require('./middlewares/notFound.middleware');
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -17,6 +18,7 @@ app.use(
     autoLogging: true
   })
 );
+app.use(corsMiddleware);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDirectory));

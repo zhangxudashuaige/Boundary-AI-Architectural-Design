@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "db:init": "node scripts/db-init.js",
     "test": "node test/api.smoke.js",
+    "test:image-edit": "node --test test/image-edit.test.js",
+    "test:prompt-refine": "node --test test/prompt-refine.test.js",
+    "test:render-failure": "node test/render-failure.smoke.js",
     "test:real-render": "node test/real-render.manual.js"
   },
   "keywords": [

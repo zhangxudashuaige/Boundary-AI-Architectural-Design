@@ -22,6 +22,17 @@ const toPositiveNumber = (value, fallback) => {
   return parsed > 0 ? parsed : fallback;
 };
 
+const toStringList = (value) => {
+  if (typeof value !== 'string') {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 const toBoolean = (value, fallback) => {
   if (value === undefined) {
     return fallback;
@@ -73,33 +84,89 @@ const normalizeAiApiKey = (value, provider) => {
   return normalized;
 };
 
+const DEFAULT_DEV_CORS_ALLOWED_ORIGINS = [
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+];
+
+const normalizeCorsAllowedOrigins = (value, nodeEnv) => {
+  const items = toStringList(value);
+
+  if (items.includes('*')) {
+    return ['*'];
+  }
+
+  if (items.length > 0) {
+    return items.map((origin) => {
+      try {
+        return new URL(origin).toString().replace(/\/$/, '');
+      } catch (error) {
+        throw new Error(`CORS_ALLOWED_ORIGINS contains an invalid URL: ${origin}`);
+      }
+    });
+  }
+
+  if (nodeEnv === 'production') {
+    return [];
+  }
+
+  return DEFAULT_DEV_CORS_ALLOWED_ORIGINS;
+};
+
 const parseDatabaseUrl = (value) => {
-  if (!value) {
+  const normalized = normalizeString(value);
+
+  if (!normalized) {
     return null;
   }
 
-  const parsed = new URL(value);
+  let parsed = null;
+
+  try {
+    parsed = new URL(normalized);
+  } catch (error) {
+    throw new Error('DATABASE_URL must be a valid absolute PostgreSQL URL');
+  }
+
+  const sslMode = normalizeString(parsed.searchParams.get('sslmode')).toLowerCase();
+  const ssl = parsed.searchParams.has('ssl')
+    ? toBoolean(parsed.searchParams.get('ssl'), false)
+    : sslMode !== '' && !['disable', 'allow'].includes(sslMode);
 
   return {
-    connectionString: value,
+    connectionString: normalized,
     host: parsed.hostname,
     port: toNumber(parsed.port, 5432),
     name: parsed.pathname.replace(/^\//, '') || 'postgres',
     user: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
-    ssl: false
+    ssl
   };
 };
 
 const databaseUrlConfig = parseDatabaseUrl(process.env.DATABASE_URL);
+const nodeEnv = process.env.NODE_ENV || 'development';
 const aiProvider = normalizeAiProvider(process.env.AI_PROVIDER);
 const aiApiKey = normalizeAiApiKey(process.env.AI_API_KEY, aiProvider);
 
 const env = {
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv,
   port: toNumber(process.env.PORT, 3000),
   logLevel: process.env.LOG_LEVEL || 'info',
   mockRenderDelayMs: toPositiveNumber(process.env.MOCK_RENDER_DELAY_MS, 5000),
+  cors: {
+    allowedOrigins: normalizeCorsAllowedOrigins(
+      process.env.CORS_ALLOWED_ORIGINS,
+      nodeEnv
+    ),
+    allowCredentials: toBoolean(process.env.CORS_ALLOW_CREDENTIALS, false),
+    allowedMethods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    allowedHeaders:
+      normalizeString(process.env.CORS_ALLOWED_HEADERS) ||
+      'Content-Type, Authorization'
+  },
   ai: {
     provider: aiProvider,
     baseUrl: toUrl(
@@ -110,13 +177,20 @@ const env = {
     apiKey: aiApiKey,
     imageModel:
       normalizeString(process.env.IMAGE_MODEL) ||
-      'gemini-2.5-flash-image',
+      'flux-2-max',
+    promptModel:
+      normalizeString(process.env.PROMPT_MODEL) ||
+      'qwen3.5-27b',
     requestTimeoutMs: toPositiveNumber(process.env.AI_REQUEST_TIMEOUT_MS, 30_000),
+    promptRequestTimeoutMs: toPositiveNumber(
+      process.env.PROMPT_REQUEST_TIMEOUT_MS,
+      60_000
+    ),
     pollIntervalMs: toPositiveNumber(process.env.AI_POLL_INTERVAL_MS, 3_000),
     pollAttempts: toPositiveNumber(process.env.AI_POLL_ATTEMPTS, 20)
   },
   database: {
-    connectionString: process.env.DATABASE_URL || null,
+    connectionString: databaseUrlConfig?.connectionString || null,
     host: process.env.DB_HOST || databaseUrlConfig?.host || 'localhost',
     port: toNumber(process.env.DB_PORT, databaseUrlConfig?.port || 5432),
     name: process.env.DB_NAME || databaseUrlConfig?.name || 'ai_arch_render',

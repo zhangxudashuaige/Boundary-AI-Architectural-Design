@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { RENDER_TASK_POLL_INTERVAL_MS } from "@/config/render-task";
 import { getRenderTask } from "@/lib/get-render-task";
 
+const DEFAULT_POLL_ERROR =
+  "\u72b6\u6001\u67e5\u8be2\u5931\u8d25\uff0c\u6b63\u5728\u51c6\u5907\u4e0b\u4e00\u6b21\u91cd\u8bd5\u3002";
+
 export function useRenderTaskPolling({
   taskId,
   enabled,
@@ -97,8 +100,7 @@ export function useRenderTaskPolling({
         }
 
         requestAbortRef.current = null;
-        const nextPollError =
-          error.message || "状态查询失败，正在准备下一次重试。";
+        const nextPollError = error.message || DEFAULT_POLL_ERROR;
 
         setPollError(nextPollError);
         handlersRef.current.onPollError?.(error);

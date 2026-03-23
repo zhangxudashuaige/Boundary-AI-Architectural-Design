@@ -1,14 +1,15 @@
 export const siteConfig = {
-  name: "AI 建筑渲染",
-  description: "AI 建筑渲染工作台，承接上传、任务创建、结果展示与历史记录。",
+  name: "Boundary AI Architectural Design",
+  description:
+    "Boundary AI Architectural Design, choose a workspace and continue into the corresponding flow.",
   navigation: [
     {
       href: "/",
-      label: "首页"
+      label: "\u9996\u9875"
     },
     {
       href: "/history",
-      label: "历史记录"
+      label: "\u5386\u53f2"
     }
   ]
 };

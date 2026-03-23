@@ -6,14 +6,44 @@ import {
   isTerminalRenderTaskStatus
 } from "@/config/render-task";
 import { formatFileMeta, validateImageFile } from "@/config/upload";
-import { createRenderTask } from "@/lib/create-render-task";
+import {
+  buildRenderTaskRequest,
+  createRenderTask
+} from "@/lib/create-render-task";
 import {
   clearHomeWorkspaceSnapshot,
   readHomeWorkspaceSnapshot,
   writeHomeWorkspaceSnapshot
 } from "@/lib/home-workspace-storage";
+import { downloadRenderResult } from "@/lib/download-render-result";
+import { refinePrompt } from "@/lib/refine-prompt";
 import { uploadImage } from "@/lib/upload-image";
 import { useRenderTaskPolling } from "@/hooks/use-render-task-polling";
+
+const META_UPLOADING = "\u4e0a\u4f20\u4e2d";
+const META_UPLOADED = "\u5df2\u4e0a\u4f20";
+const META_UPLOAD_FAILED = "\u4e0a\u4f20\u5931\u8d25";
+
+const ERROR_UPLOAD_FIRST =
+  "\u8bf7\u5148\u4e0a\u4f20\u56fe\u7247\uff0c\u4e0a\u4f20\u6210\u529f\u540e\u518d\u5f00\u59cb\u6e32\u67d3\u3002";
+const ERROR_PROMPT_REQUIRED =
+  "\u8bf7\u8f93\u5165\u539f\u59cb\u63cf\u8ff0\uff0c\u6216\u586b\u5199 AI \u4f18\u5316\u540e\u63cf\u8ff0\u3002";
+const ERROR_PROMPT_BEFORE_RENDER =
+  "\u8bf7\u8865\u5145\u539f\u59cb\u63cf\u8ff0\u6216 AI \u4f18\u5316\u540e\u63cf\u8ff0\uff0c\u518d\u5f00\u59cb\u6e32\u67d3\u3002";
+const ERROR_UPLOAD_RETRY =
+  "\u56fe\u7247\u4e0a\u4f20\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002";
+const ERROR_CREATE_TASK_RETRY =
+  "\u521b\u5efa\u6e32\u67d3\u4efb\u52a1\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002";
+const ERROR_REFINE_PROMPT_REQUIRED =
+  "\u8bf7\u5148\u586b\u5199\u539f\u59cb\u63cf\u8ff0\uff0c\u518d\u8fdb\u884c AI \u4f18\u5316\u3002";
+const ERROR_REFINE_PROMPT_RETRY =
+  "AI \u4f18\u5316\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002";
+const ERROR_TASK_FAILED =
+  "\u6e32\u67d3\u4efb\u52a1\u6267\u884c\u5931\u8d25\u3002";
+const ERROR_TASK_NOT_FOUND =
+  "\u6e32\u67d3\u4efb\u52a1\u4e0d\u5b58\u5728\uff0c\u65e0\u6cd5\u7ee7\u7eed\u67e5\u8be2\u72b6\u6001\u3002";
+const ERROR_DOWNLOAD_RETRY =
+  "\u4e0b\u8f7d\u6e32\u67d3\u7ed3\u679c\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002";
 
 function revokePreviewUrl(url) {
   if (url && url.startsWith("blob:")) {
@@ -53,8 +83,18 @@ function resolveResultPreviewUrl(taskResultImageUrl, fallbackImageUrl) {
   return taskResultImageUrl;
 }
 
+function buildImageMeta(meta, suffix) {
+  return `${meta} / ${suffix}`;
+}
+
 export function useHomeWorkspace() {
-  const [prompt, setPrompt] = useState("");
+  const [rawPrompt, setRawPrompt] = useState("");
+  const [refinedPrompt, setRefinedPrompt] = useState("");
+  const [promptInputMode, setPromptInputMode] = useState("raw");
+  const [submittedRawPrompt, setSubmittedRawPrompt] = useState("");
+  const [submittedRefinedPrompt, setSubmittedRefinedPrompt] = useState("");
+  const [submittedRenderPrompt, setSubmittedRenderPrompt] = useState("");
+  const [submittedRenderPromptSource, setSubmittedRenderPromptSource] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [imageName, setImageName] = useState("");
   const [imageMeta, setImageMeta] = useState("");
@@ -67,14 +107,25 @@ export function useHomeWorkspace() {
   const [resultUrl, setResultUrl] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [promptError, setPromptError] = useState("");
+  const [promptRefineError, setPromptRefineError] = useState("");
   const [renderError, setRenderError] = useState("");
+  const [downloadError, setDownloadError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isRefiningPrompt, setIsRefiningPrompt] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const uploadAbortRef = useRef(null);
+  const refineAbortRef = useRef(null);
   const createTaskAbortRef = useRef(null);
   const previewUrlRef = useRef("");
   const hasRestoredRef = useRef(false);
+  const promptValue = promptInputMode === "refined" ? refinedPrompt : rawPrompt;
+  const renderTaskRequest = buildRenderTaskRequest({
+    imageUrl,
+    rawPrompt,
+    refinedPrompt: promptInputMode === "refined" ? refinedPrompt : ""
+  });
 
   useEffect(() => {
     previewUrlRef.current = previewUrl;
@@ -86,7 +137,25 @@ export function useHomeWorkspace() {
     if (snapshot) {
       const nextPreviewUrl = snapshot.imageUrl || snapshot.fileUrl || "";
 
-      setPrompt(snapshot.prompt || "");
+      setRawPrompt(snapshot.rawPrompt || snapshot.prompt || "");
+      setRefinedPrompt(snapshot.refinedPrompt || "");
+      setPromptInputMode(
+        snapshot.promptInputMode || (snapshot.refinedPrompt ? "refined" : "raw")
+      );
+      setSubmittedRawPrompt(snapshot.rawPrompt || snapshot.prompt || "");
+      setSubmittedRefinedPrompt(snapshot.refinedPrompt || "");
+      setSubmittedRenderPrompt(
+        buildRenderTaskRequest({
+          rawPrompt: snapshot.rawPrompt || snapshot.prompt || "",
+          refinedPrompt: snapshot.refinedPrompt || ""
+        }).prompt
+      );
+      setSubmittedRenderPromptSource(
+        buildRenderTaskRequest({
+          rawPrompt: snapshot.rawPrompt || snapshot.prompt || "",
+          refinedPrompt: snapshot.refinedPrompt || ""
+        }).promptSource
+      );
       setPreviewUrl(nextPreviewUrl);
       setImageName(snapshot.imageName || "");
       setImageMeta(snapshot.imageMeta || "");
@@ -104,6 +173,7 @@ export function useHomeWorkspace() {
 
     return () => {
       cancelPendingUpload(false);
+      cancelPendingPromptRefine(false);
       cancelPendingTaskCreation(false);
       revokePreviewUrl(previewUrlRef.current);
     };
@@ -114,13 +184,22 @@ export function useHomeWorkspace() {
       return;
     }
 
-    if (!imageUrl && !previewUrl && !taskId && !prompt.trim()) {
+    if (
+      !imageUrl &&
+      !previewUrl &&
+      !taskId &&
+      !rawPrompt.trim() &&
+      !refinedPrompt.trim()
+    ) {
       clearHomeWorkspaceSnapshot();
       return;
     }
 
     writeHomeWorkspaceSnapshot({
-      prompt,
+      prompt: rawPrompt,
+      rawPrompt,
+      refinedPrompt,
+      promptInputMode,
       imageName,
       imageMeta,
       imageUrl,
@@ -140,7 +219,9 @@ export function useHomeWorkspace() {
     imageName,
     imageUrl,
     previewUrl,
-    prompt,
+    promptInputMode,
+    rawPrompt,
+    refinedPrompt,
     renderError,
     resultUrl,
     status,
@@ -169,22 +250,105 @@ export function useHomeWorkspace() {
     }
   }
 
+  function cancelPendingPromptRefine(syncState = true) {
+    if (refineAbortRef.current) {
+      refineAbortRef.current.abort();
+      refineAbortRef.current = null;
+    }
+
+    if (syncState) {
+      setIsRefiningPrompt(false);
+    }
+  }
+
   function resetRenderTaskState(nextStatus = "idle") {
     cancelPendingTaskCreation();
     setTaskId("");
     setBackendTaskStatus("");
     setResultUrl("");
     setRenderError("");
+    setDownloadError("");
+    setSubmittedRawPrompt("");
+    setSubmittedRefinedPrompt("");
+    setSubmittedRenderPrompt("");
+    setSubmittedRenderPromptSource(null);
     setStatus(nextStatus);
+  }
+
+  function clearPromptErrorIfNeeded(nextPrompt) {
+    if (typeof nextPrompt === "string" && nextPrompt.trim()) {
+      setPromptError("");
+    }
   }
 
   function handlePromptChange(event) {
     const nextPrompt = event.target.value;
 
-    setPrompt(nextPrompt);
+    cancelPendingPromptRefine();
+    setPromptRefineError("");
+    if (promptInputMode === "refined") {
+      if (nextPrompt === "") {
+        setRawPrompt("");
+        setRefinedPrompt("");
+        setPromptInputMode("raw");
+      } else {
+        setRefinedPrompt(nextPrompt);
+      }
+    } else {
+      setRawPrompt(nextPrompt);
+    }
+    clearPromptErrorIfNeeded(nextPrompt);
+  }
 
-    if (nextPrompt.trim()) {
+  async function handleRefinePrompt() {
+    const sourcePrompt = promptValue.trim();
+
+    if (!sourcePrompt) {
+      setPromptRefineError(ERROR_REFINE_PROMPT_REQUIRED);
+      return;
+    }
+
+    cancelPendingPromptRefine();
+    setPromptRefineError("");
+
+    const controller = new AbortController();
+    refineAbortRef.current = controller;
+    setIsRefiningPrompt(true);
+
+    try {
+      const result = await refinePrompt(
+        {
+          rawPrompt: sourcePrompt
+        },
+        controller.signal
+      );
+
+      if (refineAbortRef.current !== controller) {
+        return;
+      }
+
+      if (!rawPrompt.trim()) {
+        setRawPrompt(sourcePrompt);
+      }
+      setRefinedPrompt(result.refinedPrompt);
+      setPromptInputMode("refined");
+      setPromptRefineError("");
       setPromptError("");
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return;
+      }
+
+      if (refineAbortRef.current !== controller) {
+        return;
+      }
+
+      setPromptRefineError(error.message || ERROR_REFINE_PROMPT_RETRY);
+    } finally {
+      if (refineAbortRef.current === controller) {
+        refineAbortRef.current = null;
+        setIsRefiningPrompt(false);
+      }
     }
   }
 
@@ -214,8 +378,9 @@ export function useHomeWorkspace() {
     setUploadError("");
     setPromptError("");
     setRenderError("");
+    setDownloadError("");
     setImageName(file.name);
-    setImageMeta(`${nextImageMeta} · 上传中`);
+    setImageMeta(buildImageMeta(nextImageMeta, META_UPLOADING));
     setImageUrl("");
     setFileUrl("");
     setFilePath("");
@@ -239,7 +404,7 @@ export function useHomeWorkspace() {
       setFileUrl(uploadedImage.fileUrl);
       setFilePath(uploadedImage.filePath);
       setImageName(uploadedImage.fileName || file.name);
-      setImageMeta(`${nextImageMeta} · 已上传`);
+      setImageMeta(buildImageMeta(nextImageMeta, META_UPLOADED));
       setStatus("ready");
       setUploadError("");
     } catch (error) {
@@ -251,8 +416,8 @@ export function useHomeWorkspace() {
         return;
       }
 
-      setUploadError(error.message || "图片上传失败，请稍后重试。");
-      setImageMeta(`${nextImageMeta} · 上传失败`);
+      setUploadError(error.message || ERROR_UPLOAD_RETRY);
+      setImageMeta(buildImageMeta(nextImageMeta, META_UPLOAD_FAILED));
       setStatus("idle");
     } finally {
       if (uploadAbortRef.current === controller) {
@@ -264,13 +429,16 @@ export function useHomeWorkspace() {
 
   function handleClearImage() {
     cancelPendingUpload();
+    cancelPendingPromptRefine();
     resetRenderTaskState("idle");
 
     setPreviewUrl((previousUrl) => {
       revokePreviewUrl(previousUrl);
       return "";
     });
-    setPrompt("");
+    setRawPrompt("");
+    setRefinedPrompt("");
+    setPromptInputMode("raw");
     setImageName("");
     setImageMeta("");
     setImageUrl("");
@@ -278,7 +446,9 @@ export function useHomeWorkspace() {
     setFilePath("");
     setUploadError("");
     setPromptError("");
+    setPromptRefineError("");
     setResultUrl("");
+    setDownloadError("");
   }
 
   async function handleStartRender() {
@@ -290,16 +460,17 @@ export function useHomeWorkspace() {
     let nextPromptError = "";
 
     if (!imageUrl) {
-      nextRenderError = "请先上传图片，上传成功后再开始渲染。";
+      nextRenderError = ERROR_UPLOAD_FIRST;
     }
 
-    if (!prompt.trim()) {
-      nextPromptError = "请输入渲染描述。";
-      nextRenderError = nextRenderError || "请补充渲染描述后再开始渲染。";
+    if (!renderTaskRequest.prompt) {
+      nextPromptError = ERROR_PROMPT_REQUIRED;
+      nextRenderError = nextRenderError || ERROR_PROMPT_BEFORE_RENDER;
     }
 
     setPromptError(nextPromptError);
     setRenderError(nextRenderError);
+    setDownloadError("");
 
     if (nextRenderError || nextPromptError) {
       return;
@@ -316,10 +487,7 @@ export function useHomeWorkspace() {
 
     try {
       const task = await createRenderTask(
-        {
-          imageUrl,
-          prompt: prompt.trim()
-        },
+        renderTaskRequest,
         controller.signal
       );
 
@@ -327,10 +495,15 @@ export function useHomeWorkspace() {
         return;
       }
 
+      setSubmittedRawPrompt(renderTaskRequest.rawPrompt);
+      setSubmittedRefinedPrompt(renderTaskRequest.refinedPrompt);
+      setSubmittedRenderPrompt(renderTaskRequest.prompt);
+      setSubmittedRenderPromptSource(renderTaskRequest.promptSource);
       setTaskId(String(task.id));
       setBackendTaskStatus(task.status || BACKEND_RENDER_TASK_STATUS.PENDING);
       setStatus("generating");
       setRenderError("");
+      setDownloadError("");
     } catch (error) {
       if (error?.name === "AbortError") {
         return;
@@ -343,7 +516,7 @@ export function useHomeWorkspace() {
       setTaskId("");
       setBackendTaskStatus("");
       setStatus(imageUrl ? "ready" : "idle");
-      setRenderError(error.message || "创建渲染任务失败，请稍后重试。");
+      setRenderError(error.message || ERROR_CREATE_TASK_RETRY);
     } finally {
       if (createTaskAbortRef.current === controller) {
         createTaskAbortRef.current = null;
@@ -366,6 +539,7 @@ export function useHomeWorkspace() {
       setBackendTaskStatus(task.status || BACKEND_RENDER_TASK_STATUS.COMPLETED);
       setStatus("success");
       setRenderError("");
+      setDownloadError("");
       setResultUrl(
         resolveResultPreviewUrl(task.resultImageUrl, imageUrl || fileUrl || previewUrlRef.current)
       );
@@ -374,26 +548,46 @@ export function useHomeWorkspace() {
       setBackendTaskStatus(task.status || BACKEND_RENDER_TASK_STATUS.FAILED);
       setStatus("error");
       setResultUrl("");
-      setRenderError(task.errorMessage || "渲染任务执行失败。");
+      setRenderError(task.errorMessage || ERROR_TASK_FAILED);
     },
     onPollError: (error) => {
       if (error.status === 400 || error.status === 404) {
         setStatus("error");
-        setRenderError(error.message || "渲染任务不存在，无法继续查询状态。");
+        setRenderError(error.message || ERROR_TASK_NOT_FOUND);
       }
     }
   });
 
-  function handleDownloadPlaceholder() {
-    if (status !== "success") {
+  async function handleDownloadResult() {
+    if (status !== "success" || !taskId || isDownloading) {
       return;
     }
 
-    window.alert("下载功能仍是占位逻辑，下一阶段会接入真实下载能力。");
+    setDownloadError("");
+    setIsDownloading(true);
+
+    try {
+      await downloadRenderResult(taskId);
+    } catch (error) {
+      setDownloadError(error.message || ERROR_DOWNLOAD_RETRY);
+    } finally {
+      setIsDownloading(false);
+    }
   }
 
   return {
-    prompt,
+    rawPrompt,
+    refinedPrompt,
+    activeRenderPrompt:
+      taskId && submittedRenderPrompt ? submittedRenderPrompt : renderTaskRequest.prompt,
+    activeRenderPromptSource:
+      taskId && submittedRenderPromptSource
+        ? submittedRenderPromptSource
+        : renderTaskRequest.promptSource,
+    activeRenderRawPrompt:
+      taskId && submittedRenderPrompt ? submittedRawPrompt : renderTaskRequest.rawPrompt,
+    activeRenderRefinedPrompt:
+      taskId && submittedRenderPrompt ? submittedRefinedPrompt : renderTaskRequest.refinedPrompt,
     previewUrl,
     imageName,
     imageMeta,
@@ -406,17 +600,24 @@ export function useHomeWorkspace() {
     resultUrl,
     uploadError,
     promptError,
+    promptRefineError,
     renderError,
+    downloadError,
     pollError,
     isUploading,
+    isRefiningPrompt,
     isCreatingTask,
+    isDownloading,
     isPolling,
+    promptValue,
+    isPromptRefined: promptInputMode === "refined" && Boolean(refinedPrompt.trim()),
     canStart: !isUploading && !isCreatingTask && status !== "generating",
     hasImage: Boolean(imageUrl || previewUrl),
     handlePromptChange,
+    handleRefinePrompt,
     handleSelectImage,
     handleClearImage,
     handleStartRender,
-    handleDownloadPlaceholder
+    handleDownloadResult
   };
 }

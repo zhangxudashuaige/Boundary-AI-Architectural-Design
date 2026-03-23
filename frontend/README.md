@@ -58,12 +58,12 @@ npm.cmd run dev -- --port 3001
 4. Select a `jpg/jpeg/png/webp` image smaller than `10MB`.
 5. The upload panel should:
    show local preview
-   call `POST /api/upload`
+   call `POST http://localhost:3000/api/upload`
    display the returned server image URL after success
 6. If you select an unsupported type or a file larger than `10MB`, the panel should show a validation error before sending the request.
 7. If the backend is unavailable, the panel should show an upload failure message.
 
-The frontend first receives the browser request at its own `/api/upload` route and then forwards it to `NEXT_PUBLIC_API_BASE_URL/api/upload`. This avoids local CORS issues when the frontend runs on port `3001` and the backend runs on port `3000`.
+The frontend now calls the backend directly by using `NEXT_PUBLIC_API_BASE_URL`. This means the backend must allow the frontend origin through CORS when the frontend runs on a different port or domain.
 
 ## Manual Download Fallback
 

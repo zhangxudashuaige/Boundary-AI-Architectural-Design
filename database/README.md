@@ -4,6 +4,7 @@
 
 Use these values in `.env`:
 
+- `DATABASE_URL` (recommended for Railway)
 - `DB_HOST`
 - `DB_PORT`
 - `DB_NAME`
@@ -34,6 +35,12 @@ If the database name in `.env` is not `ai_arch_render`, update the SQL or replac
 
 ```bash
 psql -U postgres -d ai_arch_render -f database/init.sql
+```
+
+Or use the backend environment variables directly:
+
+```bash
+npm run db:init
 ```
 
 ## 3. Start the backend

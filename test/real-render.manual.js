@@ -8,6 +8,7 @@ const { once } = require('node:events');
 const { app } = require('../src/app');
 const { env } = require('../src/config/env');
 const { closeDatabasePool, query } = require('../src/config/database');
+const { getEditStrategy } = require('../src/services/image-edit.service');
 
 const tinyPngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0ioAAAAASUVORK5CYII=';
@@ -102,6 +103,12 @@ const run = async () => {
   if (env.ai.provider !== '302AI') {
     throw new Error(
       `AI_PROVIDER must be 302AI for this script. Current value: ${env.ai.provider}`
+    );
+  }
+
+  if (!['gemini-image-edit', 'flux-2-max-edit'].includes(getEditStrategy(env.ai.imageModel))) {
+    throw new Error(
+      `IMAGE_MODEL must support image editing for this script. Current value: ${env.ai.imageModel}`
     );
   }
 

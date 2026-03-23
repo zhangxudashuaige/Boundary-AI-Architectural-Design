@@ -24,6 +24,45 @@ const sleep = (ms) =>
 const normalizePrompt = (value) =>
   typeof value === 'string' ? value.trim() : '';
 
+const normalizeSourceImageInput = (sourceImage, fallbackImageUrl = null) => {
+  if (sourceImage && typeof sourceImage === 'object') {
+    if (
+      typeof sourceImage.imageUrl === 'string' &&
+      sourceImage.imageUrl.trim()
+    ) {
+      return {
+        type: 'image_url',
+        imageUrl: sourceImage.imageUrl.trim()
+      };
+    }
+
+    if (
+      sourceImage.inlineData &&
+      typeof sourceImage.inlineData.data === 'string' &&
+      sourceImage.inlineData.data &&
+      typeof sourceImage.inlineData.mimeType === 'string' &&
+      sourceImage.inlineData.mimeType
+    ) {
+      return {
+        type: 'inlineData',
+        inlineData: {
+          mimeType: sourceImage.inlineData.mimeType,
+          data: sourceImage.inlineData.data
+        }
+      };
+    }
+  }
+
+  if (typeof fallbackImageUrl === 'string' && fallbackImageUrl.trim()) {
+    return {
+      type: 'image_url',
+      imageUrl: fallbackImageUrl.trim()
+    };
+  }
+
+  return null;
+};
+
 const isAbsoluteUrl = (value) => /^https?:\/\//i.test(String(value));
 
 const isWavespeedModel = (model) =>
@@ -158,6 +197,15 @@ const parseResponsePayload = async (response) => {
   }
 };
 
+const buildTransportErrorMessage = (error) => {
+  const baseMessage =
+    error?.cause?.message ||
+    error?.message ||
+    'Unknown network error';
+
+  return `302.AI request failed: ${baseMessage}`;
+};
+
 const requestJson = async (
   path,
   {
@@ -197,7 +245,7 @@ const requestJson = async (
       throw new Error(`302.AI request timed out after ${timeoutMs}ms`);
     }
 
-    throw error;
+    throw new Error(buildTransportErrorMessage(error));
   } finally {
     clearTimeout(timeoutHandle);
   }
@@ -301,13 +349,28 @@ const extractGeminiImageUrl = (payload) => {
   return null;
 };
 
-const buildGeminiImageRequestBody = ({ prompt, size, imageUrl }) => {
+const buildGeminiImageRequestBody = ({ prompt, size, sourceImage }) => {
   const parts = [{ text: prompt }];
   const aspectRatio = sizeToAspectRatio(size);
 
-  if (typeof imageUrl === 'string' && imageUrl.trim()) {
+  if (
+    sourceImage?.type === 'image_url' &&
+    typeof sourceImage.imageUrl === 'string' &&
+    sourceImage.imageUrl
+  ) {
     parts.push({
-      image_url: imageUrl.trim()
+      image_url: sourceImage.imageUrl
+    });
+  } else if (
+    sourceImage?.type === 'inlineData' &&
+    sourceImage.inlineData?.mimeType &&
+    sourceImage.inlineData?.data
+  ) {
+    parts.push({
+      inlineData: {
+        mimeType: sourceImage.inlineData.mimeType,
+        data: sourceImage.inlineData.data
+      }
     });
   }
 
@@ -328,7 +391,7 @@ const generateViaGeminiImageApi = async ({
   prompt,
   model,
   size,
-  imageUrl
+  sourceImage
 }) => {
   const endpoint = `/google/v1/models/${model}${GEMINI_IMAGE_ENDPOINT_SUFFIX}`;
   const { response, payload } = await requestJson(endpoint, {
@@ -336,7 +399,7 @@ const generateViaGeminiImageApi = async ({
     body: buildGeminiImageRequestBody({
       prompt,
       size,
-      imageUrl
+      sourceImage
     })
   });
   const rawResponse = {
@@ -711,13 +774,13 @@ const generateImage = async ({
   size = DEFAULT_IMAGE_SIZE,
   numImages = DEFAULT_NUM_IMAGES,
   outputFormat = DEFAULT_OUTPUT_FORMAT,
+  sourceImage = null,
   imageUrl = null,
   pollIntervalMs = env.ai.pollIntervalMs,
   pollAttempts = env.ai.pollAttempts
 } = {}) => {
   const normalizedPrompt = normalizePrompt(prompt);
-  const normalizedImageUrl =
-    typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null;
+  const normalizedSourceImage = normalizeSourceImageInput(sourceImage, imageUrl);
 
   if (env.ai.provider !== '302AI') {
     return buildServiceResult({
@@ -743,7 +806,7 @@ const generateImage = async ({
     const strategy = getModelStrategy(model);
 
     if (strategy === 'wavespeed') {
-      return generateViaWavespeedApi({
+      return await generateViaWavespeedApi({
         prompt: normalizedPrompt,
         model,
         size,
@@ -755,15 +818,15 @@ const generateImage = async ({
     }
 
     if (strategy === 'gemini-image') {
-      return generateViaGeminiImageApi({
+      return await generateViaGeminiImageApi({
         prompt: normalizedPrompt,
         model,
         size,
-        imageUrl: normalizedImageUrl
+        sourceImage: normalizedSourceImage
       });
     }
 
-    return generateViaOpenAiImagesApi({
+    return await generateViaOpenAiImagesApi({
       prompt: normalizedPrompt,
       model,
       size,

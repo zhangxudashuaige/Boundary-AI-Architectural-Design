@@ -14,6 +14,8 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         imageUrl: body?.imageUrl,
+        rawPrompt: body?.rawPrompt,
+        refinedPrompt: body?.refinedPrompt,
         prompt: body?.prompt
       }),
       cache: "no-store"

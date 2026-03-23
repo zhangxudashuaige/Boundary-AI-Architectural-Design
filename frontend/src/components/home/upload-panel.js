@@ -4,45 +4,57 @@ import {
   MAX_UPLOAD_FILE_SIZE_LABEL
 } from "@/config/upload";
 
-const uploadTips = [
-  "支持 JPG、JPEG、PNG、WEBP 图片",
-  `文件大小上限 ${MAX_UPLOAD_FILE_SIZE_LABEL}`,
-  "选择图片后会立即上传到后端并返回可访问地址"
-];
+const uploadRequirement = `JPG / JPEG / PNG / WEBP，小于 ${MAX_UPLOAD_FILE_SIZE_LABEL}`;
 
-function getUploadStatusCopy({ isUploading, uploadError, imageUrl, previewUrl }) {
+function getUploadState({ isUploading, uploadError, imageUrl, previewUrl }) {
   if (isUploading) {
-    return "正在上传到服务端";
+    return {
+      label: "上传中",
+      badgeClass:
+        "inline-flex items-center rounded-full border border-black/12 bg-[#fafaf6] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-slate-900"
+    };
   }
 
   if (uploadError) {
-    return "上传失败，请重新选择图片";
+    return {
+      label: "上传失败",
+      badgeClass:
+        "inline-flex items-center rounded-full border border-black/12 bg-[#fafaf6] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-slate-900"
+    };
   }
 
   if (imageUrl) {
-    return "图片已上传到服务端";
+    return {
+      label: "已上传",
+      badgeClass:
+        "inline-flex items-center rounded-full border border-black/12 bg-[#fafaf6] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-slate-900"
+    };
   }
 
   if (previewUrl) {
-    return "图片已选择，等待上传结果";
+    return {
+      label: "已选择",
+      badgeClass:
+        "inline-flex items-center rounded-full border border-black/12 bg-[#fafaf6] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-slate-800"
+    };
   }
 
-  return "尚未上传图片";
+  return {
+    label: "待上传",
+    badgeClass:
+      "inline-flex items-center rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-slate-700"
+  };
 }
 
 export function UploadPanel({
   previewUrl,
-  imageName,
-  imageMeta,
   imageUrl,
-  fileUrl,
-  filePath,
   uploadError,
   isUploading,
   onSelectImage,
   onClearImage
 }) {
-  const statusText = getUploadStatusCopy({
+  const uploadState = getUploadState({
     isUploading,
     uploadError,
     imageUrl,
@@ -50,17 +62,16 @@ export function UploadPanel({
   });
 
   return (
-    <Panel className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
+    <Panel className="space-y-4 overflow-hidden">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent">Upload Panel</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">上传参考图片</h2>
+          <p className="text-2xl font-semibold text-slate-950">AI 图片</p>
         </div>
-        <span className="ui-chip">Step 01</span>
+        <span className={uploadState.badgeClass}>{uploadState.label}</span>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <label className="group flex min-h-[260px] cursor-pointer flex-col justify-between rounded-[30px] border border-dashed border-white/[0.15] bg-gradient-to-br from-black/10 via-white/[0.02] to-black/10 p-6 transition duration-200 hover:border-accent/60 hover:shadow-[0_18px_45px_rgba(214,185,140,0.08)]">
+      <div className="rounded-[24px] border border-black/10 bg-[#fcfcf8] p-3">
+        <label className="block cursor-pointer">
           <input
             type="file"
             accept={ACCEPTED_UPLOAD_TYPES}
@@ -68,119 +79,64 @@ export function UploadPanel({
             onChange={onSelectImage}
           />
 
-          <div className="space-y-4">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-2xl text-accent transition group-hover:scale-105 group-hover:border-accent/30 group-hover:bg-accent/10">
-              +
-            </span>
-            <div>
-              <p className="text-lg font-semibold text-white">点击选择本地图片并立即上传</p>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">
-                建议上传建筑草图、参考图或方案图。上传成功后会保存后端返回的图片地址，后续可直接用于创建渲染任务。
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-slate-950/[0.45] px-4 py-3 text-sm text-slate-300">
-            <span>推荐使用主体清晰、构图明确的建筑图片，便于后续提示词与渲染结果对齐。</span>
-            <span className="ui-button-mini">{isUploading ? "上传中..." : "添加图片"}</span>
-          </div>
-        </label>
-
-        <div className="rounded-[30px] border border-white/10 bg-slate-950/[0.45] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Image Preview</p>
-              <p className="mt-1 text-sm text-slate-300">{statusText}</p>
-            </div>
+          <div className="ui-dropzone relative min-h-[220px] overflow-hidden rounded-[20px] p-0">
+            {previewUrl ? (
+              <>
+                <img
+                  src={previewUrl}
+                  alt="参考图预览"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-white/18" />
+              </>
+            ) : null}
 
             {previewUrl ? (
               <button
                 type="button"
-                onClick={onClearImage}
-                className="ui-button-mini"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onClearImage();
+                }}
+                className="absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/92 text-lg text-slate-900 backdrop-blur-xl transition hover:bg-[#f5f5f0]"
+                aria-label="清除参考图"
               >
-                移除图片
+                ×
               </button>
             ) : null}
-          </div>
 
-          <div className="mt-4 overflow-hidden rounded-[24px] border border-white/[0.08] bg-black/[0.15]">
-            {previewUrl ? (
-              <div className="space-y-4 p-4">
-                <div className="overflow-hidden rounded-[20px] border border-white/10 bg-slate-900/80">
-                  <img
-                    src={previewUrl}
-                    alt="上传预览"
-                    className="aspect-[4/3] w-full object-cover"
-                  />
-                </div>
+            <div className="relative z-[1] flex min-h-[220px] flex-col items-center justify-center px-6 py-8 text-center">
+              {!previewUrl ? (
+                <>
+                  <div className="flex h-20 w-20 items-center justify-center rounded-[24px] border border-black/10 bg-white text-5xl text-slate-950">
+                    +
+                  </div>
+                  <p className="mt-5 text-base font-semibold text-slate-950">
+                    点击 / 拖拽 / 粘贴上传参考图
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">{uploadRequirement}</p>
+                </>
+              ) : null}
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="ui-subtle-card px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500">文件名称</p>
-                    <p className="mt-2 truncate text-sm text-white">{imageName}</p>
-                  </div>
-                  <div className="ui-subtle-card px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500">文件信息</p>
-                    <p className="mt-2 text-sm text-white">{imageMeta}</p>
-                  </div>
-                  {imageUrl ? (
-                    <div className="ui-subtle-card px-4 py-3 sm:col-span-2">
-                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                        服务端图片地址
-                      </p>
-                      <p className="mt-2 break-all text-sm text-white">
-                        {imageUrl || fileUrl}
-                      </p>
-                      {filePath ? (
-                        <p className="mt-2 break-all text-xs text-slate-400">
-                          文件路径：{filePath}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
+              {isUploading ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/76 backdrop-blur-[2px]">
+                  <div className="h-10 w-10 animate-spin rounded-full border-2 border-black/15 border-t-black/85" />
+                  <p className="mt-4 text-xs uppercase tracking-[0.24em] text-slate-900">
+                    上传中
+                  </p>
                 </div>
-              </div>
-            ) : (
-              <div className="flex min-h-[338px] flex-col items-center justify-center bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.05),transparent_45%)] px-6 text-center">
-                <div className="flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm uppercase tracking-[0.28em] text-slate-500">
-                  Preview
-                </div>
-                <p className="mt-5 text-lg font-semibold text-white">等待图片上传</p>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">
-                  选择图片后会先完成本地校验，再调用后端上传接口。上传成功后，这里会展示预览与服务端返回的图片地址。
-                </p>
-              </div>
-            )}
+              ) : null}
+            </div>
           </div>
-        </div>
+        </label>
       </div>
 
-      {isUploading ? (
-        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
-          正在将图片上传到后端，请稍候。上传完成后才能开始渲染。
-        </div>
-      ) : null}
-
       {uploadError ? (
-        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+        <div className="ui-alert border-black/12 bg-[#fafaf6] text-slate-900">
           {uploadError}
         </div>
       ) : null}
-
-      {!isUploading && imageUrl ? (
-        <div className="rounded-2xl border border-emerald/20 bg-emerald/10 px-4 py-3 text-sm text-emerald-100">
-          图片上传成功，已保存后端返回的图片地址。现在可以继续填写描述并开始渲染。
-        </div>
-      ) : null}
-
-      <ul className="grid gap-3 text-sm text-slate-300">
-        {uploadTips.map((tip) => (
-          <li key={tip} className="ui-subtle-card px-4 py-3">
-            {tip}
-          </li>
-        ))}
-      </ul>
     </Panel>
   );
 }

@@ -281,6 +281,20 @@ const getRenderTaskById = async (id) => {
   return mapRenderTask(result.rows[0]);
 };
 
+const deleteRenderTaskById = async (id) => {
+  const result = await query(
+    `
+      DELETE FROM render_tasks
+      WHERE id = $1
+      RETURNING
+        ${baseSelectColumns}
+    `,
+    [id]
+  );
+
+  return mapRenderTask(result.rows[0]);
+};
+
 const listRenderTasks = async ({
   status,
   analysisStatus,
@@ -564,6 +578,7 @@ module.exports = {
   RENDER_TASK_STATUS,
   TASK_STAGE_STATUS,
   createRenderTask,
+  deleteRenderTaskById,
   getRenderTaskById,
   listRenderTasks,
   updateRenderTask,

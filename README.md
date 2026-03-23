@@ -21,12 +21,13 @@ Configure these variables in `.env`:
 - `NODE_ENV`: runtime environment, default `development`
 - `PORT`: HTTP port, default `3000`
 - `LOG_LEVEL`: logger level, default `debug`
+- `DATABASE_URL`: full PostgreSQL connection string, recommended for Railway
 - `DB_HOST`: PostgreSQL host, default `localhost`
 - `DB_PORT`: PostgreSQL port, default `5432`
 - `DB_NAME`: database name, default `ai_arch_render`
 - `DB_USER`: database user, default `postgres`
 - `DB_PASSWORD`: database password, default `123456`
-- `DB_SSL`: whether to enable SSL, `true` or `false`
+- `DB_SSL`: whether to enable SSL, `true` or `false`; set `true` on Railway if required
 - `DB_MAX_POOL_SIZE`: pg connection pool size, default `10`
 - `DB_IDLE_TIMEOUT_MS`: idle timeout for pool connections, default `10000`
 - `DB_CONNECTION_TIMEOUT_MS`: connection timeout, default `5000`
@@ -49,6 +50,12 @@ psql -U postgres -c "CREATE DATABASE ai_arch_render;"
 
 ```bash
 psql -U postgres -d ai_arch_render -f database/init.sql
+```
+
+Or use the app environment variables directly:
+
+```bash
+npm run db:init
 ```
 
 The initial schema already creates the `render_tasks` table for the next stage.

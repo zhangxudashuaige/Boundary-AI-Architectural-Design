@@ -2,7 +2,7 @@ export function Panel({ children, className = "" }) {
   return (
     <div
       className={[
-        "rounded-[30px] border border-white/10 bg-panel p-6 shadow-soft backdrop-blur-xl",
+        "rounded-[30px] border border-black/12 bg-white p-6 shadow-soft",
         className
       ].join(" ")}
     >

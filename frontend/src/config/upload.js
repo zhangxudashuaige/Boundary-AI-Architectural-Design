@@ -14,14 +14,15 @@ export function formatFileSize(bytes) {
 }
 
 export function formatFileMeta(file) {
-  return `${file.type || "image/*"} · ${formatFileSize(file.size)}`;
+  return `${file.type || "image/*"} / ${formatFileSize(file.size)}`;
 }
 
 export function validateImageFile(file) {
   if (!file) {
     return {
       valid: false,
-      message: "请选择要上传的图片。"
+      message:
+        "\u8bf7\u9009\u62e9\u8981\u4e0a\u4f20\u7684\u56fe\u7247\u3002"
     };
   }
 
@@ -32,14 +33,15 @@ export function validateImageFile(file) {
   if (!hasValidType) {
     return {
       valid: false,
-      message: "仅支持 JPG、JPEG、PNG、WEBP 图片。"
+      message:
+        "\u4ec5\u652f\u6301 JPG\u3001JPEG\u3001PNG\u3001WEBP \u56fe\u7247\u3002"
     };
   }
 
   if (file.size > MAX_UPLOAD_FILE_SIZE) {
     return {
       valid: false,
-      message: `文件大小不能超过 ${MAX_UPLOAD_FILE_SIZE_LABEL}。`
+      message: `\u6587\u4ef6\u5927\u5c0f\u4e0d\u80fd\u8d85\u8fc7 ${MAX_UPLOAD_FILE_SIZE_LABEL}\u3002`
     };
   }
 

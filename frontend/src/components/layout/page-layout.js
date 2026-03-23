@@ -6,14 +6,14 @@ export function PageLayout({ eyebrow, title, description, aside, children }) {
       <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div className="space-y-4">
           {eyebrow ? (
-            <p className="text-xs uppercase tracking-[0.34em] text-accent">
+            <p className="text-xs uppercase tracking-[0.34em] text-slate-500">
               {eyebrow}
             </p>
           ) : null}
-          <h1 className="max-w-4xl font-display text-5xl leading-none text-white md:text-6xl">
+          <h1 className="max-w-4xl font-display text-5xl leading-none text-slate-950 md:text-6xl">
             {title}
           </h1>
-          <p className="max-w-2xl text-base leading-7 text-slate-300 md:text-lg">
+          <p className="max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
             {description}
           </p>
         </div>
