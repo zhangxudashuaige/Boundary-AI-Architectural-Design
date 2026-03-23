@@ -32,19 +32,19 @@ export function SiteHeader({ brand }) {
       <div
         className={`mx-auto flex w-full max-w-[1500px] items-center justify-between gap-4 rounded-[30px] border border-black/12 ${HEADER_SURFACE} px-4 py-4 shadow-soft md:px-5`}
       >
-        <Link href="/" className="flex min-w-0 items-center gap-1.5">
-          <span className="relative block h-[72px] w-[210px] shrink-0 overflow-visible">
+        <Link href="/" className="flex min-w-0 items-center gap-0">
+          <span className="relative block h-[76px] w-[126px] shrink-0 overflow-visible">
             <Image
-              src="/picture/baad-logo-newest.png"
+              src="/picture/baad-logo-tight.png"
               alt="BAAD logo"
               fill
-              sizes="210px"
-              className="origin-left scale-[1.85] object-contain object-left"
+              sizes="126px"
+              className="origin-left scale-[1.15] object-contain object-left"
               priority
             />
           </span>
 
-          <div className="-ml-4 min-w-0">
+          <div className="-ml-3 min-w-0">
             <p className="truncate font-display text-[1.45rem] leading-none text-slate-950 md:text-[1.7rem]">
               {brand}
             </p>
