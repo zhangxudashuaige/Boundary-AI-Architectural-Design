@@ -2,16 +2,16 @@ import { Panel } from "@/components/ui/panel";
 
 const statusMap = {
   idle: {
-    title: "创建你的第一个作品",
+    title: "开始你的第一张灵感图",
     description: "上传图片并输入描述后，这里会显示生成结果。"
   },
   ready: {
-    title: "可以开始创作",
-    description: "点击左侧按钮开始生成。"
+    title: "可以开始生成",
+    description: "点击左侧按钮，生成新的灵感结果。"
   },
   generating: {
     title: "正在生成中",
-    description: "请稍候，系统正在生成结果图。"
+    description: "请稍候，系统正在生成灵感图。"
   },
   success: {
     title: "生成完成",
@@ -54,7 +54,7 @@ function EmptyIcon() {
   );
 }
 
-function RenderEmptyState({ title, description }) {
+function EmptyState({ title, description }) {
   return (
     <div className="flex min-h-[820px] flex-col items-center justify-center px-6 text-center">
       <EmptyIcon />
@@ -68,7 +68,7 @@ function RenderEmptyState({ title, description }) {
   );
 }
 
-function RenderGeneratingState({ title, description }) {
+function GeneratingState({ title, description }) {
   return (
     <div className="flex min-h-[820px] flex-col items-center justify-center px-6 text-center">
       <div className="flex h-24 w-24 items-center justify-center rounded-full border border-black/10 bg-[#fafaf6]">
@@ -82,7 +82,7 @@ function RenderGeneratingState({ title, description }) {
   );
 }
 
-function RenderErrorState({ title, description, errorMessage }) {
+function ErrorState({ title, description, errorMessage }) {
   return (
     <div className="flex min-h-[820px] flex-col items-center justify-center px-6 text-center">
       <div className="flex h-24 w-24 items-center justify-center rounded-full border border-black/12 bg-[#fafaf6] text-3xl text-slate-950">
@@ -114,17 +114,17 @@ function DownloadButton({ isDownloading, onDownload }) {
   );
 }
 
-export function RenderResult({
+export function InspirationResult({
   status,
   resultUrl,
-  renderError,
+  generationError,
   pollError,
   downloadError = "",
   isDownloading = false,
   onDownload
 }) {
   const current = statusMap[status] || statusMap.idle;
-  const errorMessage = renderError || pollError || "";
+  const errorMessage = generationError || pollError || "";
   const showDownloadButton =
     status === "success" && resultUrl && typeof onDownload === "function";
 
@@ -155,21 +155,18 @@ export function RenderResult({
         ) : null}
 
         {status === "generating" ? (
-          <RenderGeneratingState
+          <GeneratingState
             title={current.title}
             description={current.description}
           />
         ) : null}
 
         {status === "idle" || status === "ready" ? (
-          <RenderEmptyState
-            title={current.title}
-            description={current.description}
-          />
+          <EmptyState title={current.title} description={current.description} />
         ) : null}
 
         {status === "error" ? (
-          <RenderErrorState
+          <ErrorState
             title={current.title}
             description={current.description}
             errorMessage={errorMessage}

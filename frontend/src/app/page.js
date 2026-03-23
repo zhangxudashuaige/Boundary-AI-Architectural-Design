@@ -4,23 +4,22 @@ import Link from "next/link";
 const featureEntries = [
   {
     href: "/render",
-    eyebrow: "Rendering",
-    title: "AI 建筑渲染",
-    description:
-      "当前已可用的功能工作区，包含参考图上传、创作描述与生成结果区。",
+    eyebrow: "Plan Inspiration",
+    title: "ai模型发散",
+    description: "为平面图和立体图提供灵感辅助",
     action: "START",
-    imageSrc: "/picture/render-preview-reference.png",
-    imageAlt: "建筑渲染预览图"
+    imageSrc: "/picture/model-divergence-reference.jpeg",
+    imageAlt: "ai模型发散预览图"
   },
   {
     href: "/feature-2",
-    eyebrow: "Plan Inspiration",
-    title: "平面图灵感生成",
+    eyebrow: "Rendering",
+    title: "ai建筑渲染",
     description:
-      "从场地现状或初始平面条件出发，快速形成更有方向感的平面图灵感方案。",
+      "对用户输入的建筑模型进行智能渲染，生成高质量的视觉效果。",
     action: "START",
-    imageSrc: "/picture/plan-inspiration-reference.png",
-    imageAlt: "平面图灵感生成预览图"
+    imageSrc: "/picture/render-preview-reference.png",
+    imageAlt: "智能建筑渲染预览图"
   },
   {
     href: "/feature-3",

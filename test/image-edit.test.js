@@ -9,8 +9,9 @@ const { editImage, getEditStrategy } = require('../src/services/image-edit.servi
 test('getEditStrategy recognizes current model support for image editing', () => {
   assert.equal(getEditStrategy('flux-2-max'), 'flux-2-max-edit');
   assert.equal(getEditStrategy('gemini-2.5-flash-image'), 'gemini-image-edit');
+  assert.equal(getEditStrategy('gpt-image-1.5'), 'gpt-image-edit');
   assert.equal(getEditStrategy('wavespeed-ai/flux-schnell'), 'unsupported-wavespeed');
-  assert.equal(getEditStrategy('gpt-image-1'), 'unsupported-openai-images');
+  assert.equal(getEditStrategy('text-only-model'), 'unsupported-openai-images');
 });
 
 test('editImage returns a mock success result for valid input', async () => {

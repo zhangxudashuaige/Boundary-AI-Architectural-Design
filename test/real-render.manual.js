@@ -106,7 +106,11 @@ const run = async () => {
     );
   }
 
-  if (!['gemini-image-edit', 'flux-2-max-edit'].includes(getEditStrategy(env.ai.imageModel))) {
+  if (
+    !['gemini-image-edit', 'flux-2-max-edit', 'gpt-image-edit'].includes(
+      getEditStrategy(env.ai.imageModel)
+    )
+  ) {
     throw new Error(
       `IMAGE_MODEL must support image editing for this script. Current value: ${env.ai.imageModel}`
     );

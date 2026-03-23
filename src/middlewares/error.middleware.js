@@ -5,7 +5,8 @@ const errorHandler = (error, req, res, next) => {
 
   const isFileTooLarge = error.code === 'LIMIT_FILE_SIZE';
   const statusCode = isFileTooLarge ? 400 : error.statusCode || 500;
-  const isOperational = statusCode < 500;
+  const isOperational =
+    isFileTooLarge || error?.name === 'AppError' || statusCode < 500;
   const message = isFileTooLarge
     ? 'File size must not exceed 10MB'
     : isOperational

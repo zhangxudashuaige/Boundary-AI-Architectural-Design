@@ -2,8 +2,12 @@ const crypto = require('crypto');
 
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
+const { downloadImage } = require('./image-download.service');
 const { generateImage } = require('./ai-image.service');
 const { resolveSourceImageInput } = require('./source-image-input.service');
+
+const OPENAI_IMAGE_EDIT_ENDPOINTS = ['/v1/images/edits', '/302/images/edits'];
+const DEFAULT_OPENAI_IMAGE_EDIT_SIZE = '1024x1024';
 
 const isWavespeedModel = (model) =>
   typeof model === 'string' && model.startsWith('wavespeed-ai/');
@@ -20,9 +24,16 @@ const isGeminiImageModel = (model) =>
   model.startsWith('gemini-') &&
   model.includes('-image');
 
+const isGptImageModel = (model) =>
+  typeof model === 'string' && model.startsWith('gpt-image-');
+
 const getEditStrategy = (model) => {
   if (isFlux2MaxModel(model)) {
     return 'flux-2-max-edit';
+  }
+
+  if (isGptImageModel(model)) {
+    return 'gpt-image-edit';
   }
 
   if (isGeminiImageModel(model)) {
@@ -103,6 +114,20 @@ const buildTransportErrorMessage = (error) => {
   return `302.AI request failed: ${baseMessage}`;
 };
 
+const parseResponsePayload = async (response) => {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return { raw: text };
+  }
+};
+
 const request302AiJson = async (
   path,
   {
@@ -146,6 +171,48 @@ const request302AiJson = async (
   }
 };
 
+const request302AiFormData = async (
+  path,
+  {
+    method = 'POST',
+    formData,
+    timeoutMs = env.ai.requestTimeoutMs
+  } = {}
+) => {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  timeoutHandle.unref?.();
+
+  try {
+    const response = await fetch(`${env.ai.baseUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: env.ai.apiKey,
+        Accept: 'application/json'
+      },
+      body: formData,
+      signal: controller.signal
+    });
+    const payload = await parseResponsePayload(response);
+
+    return {
+      response,
+      payload
+    };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`302.AI request timed out after ${timeoutMs}ms`);
+    }
+
+    throw new Error(buildTransportErrorMessage(error));
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+};
+
 const resolveFluxReferenceImage = async (imageUrl) => {
   const sourceImage = await resolveSourceImageInput(imageUrl);
 
@@ -171,6 +238,64 @@ const extractFluxOutputImageUrl = (payload) =>
   payload?.result?.sample ||
   (Array.isArray(payload?.result?.samples) ? payload.result.samples[0] : null) ||
   null;
+
+const extractOpenAiOutputImageUrl = (payload) => {
+  const firstItem = Array.isArray(payload?.data) ? payload.data[0] : null;
+
+  if (firstItem) {
+    if (typeof firstItem.url === 'string' && firstItem.url) {
+      return firstItem.url;
+    }
+
+    if (typeof firstItem.image_url === 'string' && firstItem.image_url) {
+      return firstItem.image_url;
+    }
+
+    if (typeof firstItem.b64_json === 'string' && firstItem.b64_json) {
+      return `data:image/png;base64,${firstItem.b64_json}`;
+    }
+  }
+
+  const nestedImages =
+    payload?.data?.task_result?.images || payload?.data?.images || payload?.images;
+  const firstNestedImage = Array.isArray(nestedImages) ? nestedImages[0] : null;
+
+  if (typeof firstNestedImage === 'string' && firstNestedImage) {
+    return firstNestedImage;
+  }
+
+  if (typeof firstNestedImage?.url === 'string' && firstNestedImage.url) {
+    return firstNestedImage.url;
+  }
+
+  if (
+    typeof firstNestedImage?.b64_json === 'string' &&
+    firstNestedImage.b64_json
+  ) {
+    return `data:image/png;base64,${firstNestedImage.b64_json}`;
+  }
+
+  return null;
+};
+
+const extractErrorMessage = (payload, fallbackMessage) =>
+  payload?.data?.error ||
+  payload?.error?.detail ||
+  payload?.error?.message ||
+  payload?.message ||
+  fallbackMessage;
+
+const normalizeOpenAiImageEditSize = (value) => {
+  if (typeof value !== 'string') {
+    return DEFAULT_OPENAI_IMAGE_EDIT_SIZE;
+  }
+
+  const normalized = value.trim().replace('*', 'x');
+
+  return /^\d+x\d+$/i.test(normalized)
+    ? normalized.toLowerCase()
+    : DEFAULT_OPENAI_IMAGE_EDIT_SIZE;
+};
 
 const validateEditInput = ({ imageUrl, prompt }) => {
   if (typeof imageUrl !== 'string' || imageUrl.trim() === '') {
@@ -200,6 +325,136 @@ const editImageViaMockProvider = async ({ imageUrl, prompt, model }) =>
     model,
     strategy: 'mock-image-edit'
   });
+
+const editImageViaOpenAiImagesApi = async ({ imageUrl, prompt, model }) => {
+  let sourceImage = null;
+
+  try {
+    sourceImage = await downloadImage({
+      imageUrl,
+      taskId: 'source',
+      fileNamePrefix: 'source-image'
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        provider: '302AI',
+        model,
+        strategy: 'gpt-image-edit',
+        imageUrlMode: summarizeImageUrlMode(imageUrl),
+        errorMessage: error.message
+      },
+      'Image edit source image resolution failed'
+    );
+
+    return buildServiceResult({
+      success: false,
+      outputImageUrl: null,
+      rawResponse: {
+        provider: '302AI',
+        imageUrl,
+        prompt
+      },
+      errorMessage: error.message,
+      model,
+      strategy: 'gpt-image-edit'
+    });
+  }
+
+  let lastAttempt = null;
+
+  for (const endpoint of OPENAI_IMAGE_EDIT_ENDPOINTS) {
+    const formData = new FormData();
+    formData.append('model', model);
+    formData.append('prompt', prompt);
+    formData.append('size', normalizeOpenAiImageEditSize(DEFAULT_OPENAI_IMAGE_EDIT_SIZE));
+    formData.append('response_format', 'url');
+    formData.append(
+      'image',
+      new Blob([sourceImage.buffer], {
+        type: sourceImage.contentType || 'application/octet-stream'
+      }),
+      sourceImage.fileName || 'source-image.png'
+    );
+
+    const attempt = await request302AiFormData(endpoint, {
+      method: 'POST',
+      formData
+    });
+
+    lastAttempt = {
+      endpoint,
+      response: attempt.response,
+      payload: attempt.payload
+    };
+
+    if (
+      attempt.response.ok &&
+      extractOpenAiOutputImageUrl(attempt.payload)
+    ) {
+      break;
+    }
+
+    if (![404, 405].includes(attempt.response.status)) {
+      break;
+    }
+  }
+
+  const { endpoint, response, payload } = lastAttempt || {};
+  const rawResponse = {
+    endpoint,
+    responseStatus: response?.status || null,
+    result: payload
+  };
+
+  if (!payload) {
+    return buildServiceResult({
+      success: false,
+      outputImageUrl: null,
+      rawResponse,
+      errorMessage: '302.AI returned an empty image edit response',
+      model,
+      strategy: 'gpt-image-edit'
+    });
+  }
+
+  if (payload?.raw) {
+    return buildServiceResult({
+      success: false,
+      outputImageUrl: null,
+      rawResponse,
+      errorMessage: '302.AI returned a non-JSON image edit response',
+      model,
+      strategy: 'gpt-image-edit'
+    });
+  }
+
+  const outputImageUrl = extractOpenAiOutputImageUrl(payload);
+
+  if (!response?.ok || !outputImageUrl) {
+    return buildServiceResult({
+      success: false,
+      outputImageUrl: null,
+      rawResponse,
+      errorMessage: extractErrorMessage(
+        payload,
+        outputImageUrl
+          ? '302.AI image edit failed'
+          : '302.AI image edit result format is invalid'
+      ),
+      model,
+      strategy: 'gpt-image-edit'
+    });
+  }
+
+  return buildServiceResult({
+    success: true,
+    outputImageUrl,
+    rawResponse,
+    model,
+    strategy: 'gpt-image-edit'
+  });
+};
 
 const editImageVia302Ai = async ({ imageUrl, prompt, model }) => {
   const strategy = getEditStrategy(model);
@@ -346,6 +601,14 @@ const editImageVia302Ai = async ({ imageUrl, prompt, model }) => {
       errorMessage: 'Flux-2-Max image edit polling timed out',
       model,
       strategy
+    });
+  }
+
+  if (strategy === 'gpt-image-edit') {
+    return editImageViaOpenAiImagesApi({
+      imageUrl,
+      prompt,
+      model
     });
   }
 

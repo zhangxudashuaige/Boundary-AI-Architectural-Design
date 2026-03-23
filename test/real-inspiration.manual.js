@@ -1,8 +1,4 @@
 process.env.NODE_ENV = 'production';
-process.env.LOG_LEVEL = 'silent';
-process.env.AI_PROVIDER = '302AI';
-process.env.AI_API_KEY = 'Bearer test-key';
-process.env.IMAGE_MODEL = 'wavespeed-ai/flux-schnell';
 
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
@@ -10,11 +6,25 @@ const path = require('path');
 const { once } = require('node:events');
 
 const { app } = require('../src/app');
+const { env } = require('../src/config/env');
 const { closeDatabasePool, query } = require('../src/config/database');
+const { getEditStrategy } = require('../src/services/image-edit.service');
 
 const tinyPngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0ioAAAAASUVORK5CYII=';
 const tinyPngBuffer = Buffer.from(tinyPngBase64, 'base64');
+
+const summarizeResultImageUrl = (value) => {
+  if (typeof value !== 'string' || value === '') {
+    return value;
+  }
+
+  if (value.startsWith('data:image/')) {
+    return `[data-url length=${value.length}]`;
+  }
+
+  return value;
+};
 
 const applySchemaMigration = async () => {
   const migrationSql = await fs.readFile(
@@ -30,7 +40,7 @@ const uploadFixtureImage = async (baseUrl) => {
   formData.append(
     'image',
     new Blob([tinyPngBuffer], { type: 'image/png' }),
-    'failure-test.png'
+    'real-inspiration-test.png'
   );
 
   const response = await fetch(`${baseUrl}/api/upload`, {
@@ -45,8 +55,8 @@ const uploadFixtureImage = async (baseUrl) => {
   return payload;
 };
 
-const createRenderTask = async (baseUrl, imageUrl, prompt) => {
-  const response = await fetch(`${baseUrl}/api/render`, {
+const createInspirationTask = async (baseUrl, imageUrl, prompt) => {
+  const response = await fetch(`${baseUrl}/api/inspiration`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -65,11 +75,16 @@ const createRenderTask = async (baseUrl, imageUrl, prompt) => {
   return payload.data.task;
 };
 
-const pollRenderTask = async (baseUrl, taskId, maxAttempts = 20, intervalMs = 100) => {
+const pollInspirationTask = async (
+  baseUrl,
+  taskId,
+  maxAttempts = 30,
+  intervalMs = 3000
+) => {
   let latestTask = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const response = await fetch(`${baseUrl}/api/render/${taskId}`);
+    const response = await fetch(`${baseUrl}/api/inspiration/${taskId}`);
     const payload = await response.json();
 
     assert.equal(response.status, 200);
@@ -77,7 +92,7 @@ const pollRenderTask = async (baseUrl, taskId, maxAttempts = 20, intervalMs = 10
 
     latestTask = payload.data.task;
 
-    if (latestTask.status === 'failed') {
+    if (latestTask.status === 'completed' || latestTask.status === 'failed') {
       return latestTask;
     }
 
@@ -90,6 +105,18 @@ const pollRenderTask = async (baseUrl, taskId, maxAttempts = 20, intervalMs = 10
 };
 
 const run = async () => {
+  if (env.ai.provider !== '302AI') {
+    throw new Error(
+      `AI_PROVIDER must be 302AI for this script. Current value: ${env.ai.provider}`
+    );
+  }
+
+  if (!['gemini-image-edit', 'flux-2-max-edit'].includes(getEditStrategy(env.ai.imageModel))) {
+    throw new Error(
+      `IMAGE_MODEL must support image editing for this script. Current value: ${env.ai.imageModel}`
+    );
+  }
+
   const server = app.listen(0, '127.0.0.1');
   let uploadResult = null;
   let task = null;
@@ -103,35 +130,45 @@ const run = async () => {
     await applySchemaMigration();
     uploadResult = await uploadFixtureImage(baseUrl);
 
-    task = await createRenderTask(
+    task = await createInspirationTask(
       baseUrl,
       uploadResult.url,
-      'modern concrete villa with warm sunset lighting'
+      'architectural inspiration image for a modern villa facade with glass, concrete, and warm sunset lighting'
     );
 
-    const failedTask = await pollRenderTask(baseUrl, task.id);
+    const finalTask = await pollInspirationTask(baseUrl, task.id);
 
-    assert.ok(failedTask);
-    assert.equal(failedTask.id, task.id);
-    assert.equal(failedTask.status, 'failed');
-    assert.equal(failedTask.renderStatus, 'failed');
-    assert.equal(failedTask.resultImageUrl, null);
-    assert.equal(
-      failedTask.optimizedPrompt,
-      'modern concrete villa with warm sunset lighting'
-    );
-    assert.match(
-      failedTask.errorMessage,
-      /does not support image editing/i
+    if (!finalTask) {
+      throw new Error('Inspiration polling ended without receiving a task result');
+    }
+
+    if (finalTask.status !== 'completed') {
+      throw new Error(
+        `Inspiration task did not complete successfully: ${finalTask.errorMessage || finalTask.status}`
+      );
+    }
+
+    console.log(
+      JSON.stringify(
+        {
+          success: true,
+          taskId: finalTask.id,
+          status: finalTask.status,
+          generationStatus: finalTask.generationStatus,
+          resultImageUrl: summarizeResultImageUrl(finalTask.resultImageUrl),
+          optimizedPrompt: finalTask.optimizedPrompt,
+          model: env.ai.imageModel
+        },
+        null,
+        2
+      )
     );
 
-    await query('DELETE FROM render_tasks WHERE id = $1', [failedTask.id]);
+    await query('DELETE FROM inspiration_tasks WHERE id = $1', [finalTask.id]);
     task = null;
-
-    console.log('PASS test/render-failure.smoke.js');
   } finally {
     if (task?.id) {
-      await query('DELETE FROM render_tasks WHERE id = $1', [task.id]).catch(() => {});
+      await query('DELETE FROM inspiration_tasks WHERE id = $1', [task.id]).catch(() => {});
     }
 
     if (uploadResult?.filePath) {
@@ -155,7 +192,7 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error('FAIL test/render-failure.smoke.js');
-  console.error(error);
+  console.error('FAIL test/real-inspiration.manual.js');
+  console.error(error.stack || error.message);
   process.exitCode = 1;
 });

@@ -2,8 +2,13 @@ const { logger } = require('../../config/logger');
 const { env } = require('../../config/env');
 const { downloadImage } = require('../../services/image-download.service');
 const { editImage } = require('../../services/image-edit.service');
-const { refinePrompt } = require('../../services/prompt-refine.service');
+const {
+  extractGeometryConstraint,
+  isGeometryAnalysisEnabled,
+  normalizeGeometryConstraint
+} = require('../../services/geometry-constraint.service');
 const { AppError } = require('../../utils/AppError');
+const { buildRenderEditPrompt } = require('./render-prompt-composer');
 const {
   RENDER_TASK_STATUS,
   TASK_STAGE_STATUS,
@@ -11,6 +16,7 @@ const {
   deleteRenderTaskById,
   getRenderTaskById,
   listRenderTasks,
+  updateAnalysisTaskStatus,
   updateRenderTask,
   updateRenderTaskStatus
 } = require('./render-task.repository');
@@ -18,35 +24,51 @@ const {
 const normalizeNonEmptyString = (value) =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 
-const buildOptimizedPrompt = async (prompt) => {
-  try {
-    const refineResult = await refinePrompt(prompt);
-    return normalizeNonEmptyString(refineResult.refinedPrompt);
-  } catch (error) {
-    logger.warn(
-      { err: error },
-      'Prompt refinement failed, falling back to raw prompt'
-    );
-
-    return null;
-  }
-};
-
 const getTaskRawPrompt = (task) =>
   normalizeNonEmptyString(task.rawPrompt) ||
   normalizeNonEmptyString(task.renderPrompt) ||
   '';
 
+const getTaskGeometryConstraint = (task) => {
+  const geometryConstraint = task?.analysisResult?.geometryConstraint;
+
+  if (!geometryConstraint || typeof geometryConstraint !== 'object') {
+    return null;
+  }
+
+  const normalizedGeometryConstraint =
+    normalizeGeometryConstraint(geometryConstraint);
+
+  return normalizedGeometryConstraint.summary ||
+    normalizedGeometryConstraint.massing.length ||
+    normalizedGeometryConstraint.topology.length ||
+    normalizedGeometryConstraint.shapeLanguage.length ||
+    normalizedGeometryConstraint.camera.length ||
+    normalizedGeometryConstraint.forbidden.length
+    ? normalizedGeometryConstraint
+    : null;
+};
+
 const resolvePreferredTaskPrompt = async (task) => {
   const rawPrompt = getTaskRawPrompt(task);
-  const refinedPrompt =
-    normalizeNonEmptyString(task.optimizedPrompt) ||
-    (await buildOptimizedPrompt(rawPrompt));
+  const renderPrompt =
+    normalizeNonEmptyString(task.renderPrompt) || rawPrompt;
+  const refinedPrompt = renderPrompt !== rawPrompt ? renderPrompt : null;
+  const prompt = renderPrompt;
+  const geometryConstraint = getTaskGeometryConstraint(task);
 
   return {
     rawPrompt,
     refinedPrompt,
-    prompt: refinedPrompt || rawPrompt
+    renderPrompt,
+    prompt,
+    geometryConstraint,
+    editPrompt: buildRenderEditPrompt({
+      userPrompt: renderPrompt,
+      rawPrompt,
+      appearancePrompt: refinedPrompt,
+      geometryConstraint
+    })
   };
 };
 
@@ -112,15 +134,41 @@ const summarizeOutputImageUrlForLog = (value) => {
   return value;
 };
 
+const resolveSerializedPromptBundle = (task) => {
+  const rawPrompt =
+    normalizeNonEmptyString(task.rawPrompt) ||
+    normalizeNonEmptyString(task.renderPrompt) ||
+    '';
+  const renderPrompt =
+    normalizeNonEmptyString(task.renderPrompt) || rawPrompt;
+  const optimizedPrompt =
+    normalizeNonEmptyString(task.optimizedPrompt) || renderPrompt;
+  const promptSource = renderPrompt !== rawPrompt ? 'refinedPrompt' : 'rawPrompt';
+  const geometryConstraint = getTaskGeometryConstraint(task);
+
+  return {
+    rawPrompt,
+    renderPrompt,
+    optimizedPrompt,
+    promptSource,
+    geometryConstraint,
+    editPrompt: buildRenderEditPrompt({
+      userPrompt: renderPrompt,
+      rawPrompt,
+      appearancePrompt: renderPrompt !== rawPrompt ? renderPrompt : null,
+      geometryConstraint
+    })
+  };
+};
+
 const serializeRenderTask = (task) => ({
+  ...resolveSerializedPromptBundle(task),
   id: task.id,
   imageUrl: task.inputImageUrl || task.inputFileUrl,
   inputFileUrl: task.inputFileUrl,
   inputFileType: task.inputFileType,
   prompt: task.rawPrompt || task.renderPrompt,
   analysisRequest: task.analysisRequest,
-  renderPrompt: task.renderPrompt,
-  optimizedPrompt: task.optimizedPrompt,
   status: task.status,
   analysisStatus: task.analysisStatus,
   renderStatus: task.renderStatus,
@@ -151,25 +199,81 @@ const assertRequiredString = (value, fieldName) => {
   }
 };
 
-const runRenderPipeline = async (task) => {
+const resolveTaskWithGeometryAnalysis = async (task) => {
+  if (!isGeometryAnalysisEnabled()) {
+    return task;
+  }
+
+  if (getTaskGeometryConstraint(task)) {
+    return task;
+  }
+
   const imageUrl = task.inputImageUrl || task.inputFileUrl;
-  const { rawPrompt, refinedPrompt, prompt } = await resolvePreferredTaskPrompt(task);
+
+  if (!normalizeNonEmptyString(imageUrl)) {
+    return task;
+  }
+
+  let nextTask = task;
+
+  if (task.analysisStatus !== TASK_STAGE_STATUS.PROCESSING) {
+    nextTask =
+      (await updateAnalysisTaskStatus(task.id, TASK_STAGE_STATUS.PROCESSING)) ||
+      nextTask;
+  }
+
+  const analysisResult = await extractGeometryConstraint({ imageUrl });
+
+  if (!analysisResult?.geometryConstraint) {
+    return (
+      (await updateAnalysisTaskStatus(task.id, TASK_STAGE_STATUS.SKIPPED, {
+        analysisResult: null
+      })) || nextTask
+    );
+  }
+
+  return (
+    (await updateAnalysisTaskStatus(task.id, TASK_STAGE_STATUS.COMPLETED, {
+      analysisResult
+    })) || {
+      ...nextTask,
+      analysisStatus: TASK_STAGE_STATUS.COMPLETED,
+      analysisResult
+    }
+  );
+};
+
+const runRenderPipeline = async (task) => {
+  let activeTask = task;
+  const imageUrl = task.inputImageUrl || task.inputFileUrl;
   let editResult = null;
 
   try {
+    activeTask = await resolveTaskWithGeometryAnalysis(task);
+
+    const {
+      rawPrompt,
+      refinedPrompt,
+      renderPrompt,
+      prompt,
+      editPrompt,
+      geometryConstraint
+    } = await resolvePreferredTaskPrompt(activeTask);
+
     logger.info(
       {
-        taskId: task.id,
+        taskId: activeTask.id,
         provider: env.ai.provider,
         model: env.ai.imageModel,
         imageUrl,
-        promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt'
+        promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt',
+        editPromptLength: editPrompt.length
       },
       'Render task started'
     );
 
     const processingTask = await updateRenderTaskStatus(
-      task.id,
+      activeTask.id,
       RENDER_TASK_STATUS.PROCESSING,
       {
         optimizedPrompt: prompt,
@@ -178,24 +282,38 @@ const runRenderPipeline = async (task) => {
     );
 
     if (!processingTask) {
-      logger.warn({ taskId: task.id }, 'Render task not found before processing');
+      logger.warn({ taskId: activeTask.id }, 'Render task not found before processing');
       return;
     }
 
     logger.info(
       {
-        taskId: task.id,
+        taskId: activeTask.id,
+        promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt',
+        rawPrompt,
+        renderPrompt,
+        optimizedPrompt: prompt,
+        geometryConstraint,
+        editPrompt
+      },
+      'Resolved render image edit prompt'
+    );
+
+    logger.info(
+      {
+        taskId: activeTask.id,
         provider: env.ai.provider,
         model: env.ai.imageModel,
         imageUrl,
-        promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt'
+        promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt',
+        editPromptLength: editPrompt.length
       },
       'Starting image edit render pipeline'
     );
 
     editResult = await editImage({
       imageUrl,
-      prompt
+      prompt: editPrompt
     });
 
     if (!editResult.success || !editResult.outputImageUrl) {
@@ -203,7 +321,7 @@ const runRenderPipeline = async (task) => {
     }
 
     const completedTask = await updateRenderTaskStatus(
-      task.id,
+      activeTask.id,
       RENDER_TASK_STATUS.COMPLETED,
       {
         optimizedPrompt: prompt,
@@ -213,13 +331,13 @@ const runRenderPipeline = async (task) => {
     );
 
     if (!completedTask) {
-      logger.warn({ taskId: task.id }, 'Render task not found before completion');
+      logger.warn({ taskId: activeTask.id }, 'Render task not found before completion');
       return;
     }
 
     logger.info(
       {
-        taskId: task.id,
+        taskId: activeTask.id,
         provider: editResult.provider || env.ai.provider,
         model: editResult.model || env.ai.imageModel,
         strategy: editResult.strategy || null,
@@ -228,38 +346,48 @@ const runRenderPipeline = async (task) => {
       'Image edit render succeeded'
     );
   } catch (error) {
+    const { prompt } = await resolvePreferredTaskPrompt(activeTask);
+
     logger.error(
       {
         err: error,
-        taskId: task.id,
+        taskId: activeTask.id,
         imageUrl,
-        rawPrompt,
+        rawPrompt: getTaskRawPrompt(activeTask),
         ...summarizeImageEditFailure(editResult)
       },
       'Image edit render failed'
     );
 
-    await markRenderTaskFailed(task.id, {
+    await markRenderTaskFailed(activeTask.id, {
       optimizedPrompt: prompt,
       errorMessage: error.message
     });
   }
 };
 
-const createRenderJob = async ({ imageUrl, prompt }) => {
+const createRenderJob = async ({ imageUrl, prompt, rawPrompt, refinedPrompt }) => {
   assertRequiredString(imageUrl, 'imageUrl');
   assertRequiredString(prompt, 'prompt');
-  const rawPrompt = prompt.trim();
-  const optimizedPrompt = (await buildOptimizedPrompt(rawPrompt)) || rawPrompt;
+  const normalizedRawPrompt =
+    normalizeNonEmptyString(rawPrompt) || prompt.trim();
+  const normalizedRenderPrompt = prompt.trim();
+  const normalizedRefinedPrompt = normalizeNonEmptyString(refinedPrompt);
+  const optimizedPrompt = normalizedRenderPrompt;
 
   const task = await createRenderTask({
     inputFileUrl: imageUrl.trim(),
     inputFileType: 'image',
     inputImageUrl: imageUrl.trim(),
-    renderPrompt: rawPrompt,
-    rawPrompt,
+    renderPrompt: normalizedRenderPrompt,
+    rawPrompt: normalizedRawPrompt,
+    analysisRequest: isGeometryAnalysisEnabled()
+      ? `geometry-constraint:${env.ai.geometryModel}`
+      : null,
     optimizedPrompt,
-    analysisStatus: TASK_STAGE_STATUS.SKIPPED,
+    analysisStatus: isGeometryAnalysisEnabled()
+      ? TASK_STAGE_STATUS.PENDING
+      : TASK_STAGE_STATUS.SKIPPED,
     renderStatus: TASK_STAGE_STATUS.PENDING,
     status: RENDER_TASK_STATUS.PENDING
   });
@@ -270,7 +398,10 @@ const createRenderJob = async ({ imageUrl, prompt }) => {
       provider: env.ai.provider,
       model: env.ai.imageModel,
       imageUrl: task.inputFileUrl,
-      promptSource: optimizedPrompt !== rawPrompt ? 'refinedPrompt' : 'rawPrompt'
+      promptSource:
+        normalizedRefinedPrompt || optimizedPrompt !== normalizedRawPrompt
+          ? 'refinedPrompt'
+          : 'rawPrompt'
     },
     'Render task created'
   );

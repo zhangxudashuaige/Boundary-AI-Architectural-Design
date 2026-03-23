@@ -181,10 +181,15 @@ const env = {
     promptModel:
       normalizeString(process.env.PROMPT_MODEL) ||
       'qwen3.5-27b',
+    geometryModel: normalizeString(process.env.GEOMETRY_MODEL),
     requestTimeoutMs: toPositiveNumber(process.env.AI_REQUEST_TIMEOUT_MS, 30_000),
     promptRequestTimeoutMs: toPositiveNumber(
       process.env.PROMPT_REQUEST_TIMEOUT_MS,
       60_000
+    ),
+    geometryRequestTimeoutMs: toPositiveNumber(
+      process.env.GEOMETRY_REQUEST_TIMEOUT_MS,
+      15_000
     ),
     pollIntervalMs: toPositiveNumber(process.env.AI_POLL_INTERVAL_MS, 3_000),
     pollAttempts: toPositiveNumber(process.env.AI_POLL_ATTEMPTS, 20)

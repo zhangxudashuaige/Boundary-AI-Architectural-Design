@@ -45,14 +45,16 @@ const uploadFixtureImage = async (baseUrl) => {
   return payload;
 };
 
-const createRenderTask = async (baseUrl, imageUrl, prompt) => {
-  const response = await fetch(`${baseUrl}/api/render`, {
+const createInspirationTask = async (baseUrl, imageUrl, prompt) => {
+  const response = await fetch(`${baseUrl}/api/inspiration`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       imageUrl,
+      rawPrompt: prompt,
+      refinedPrompt: '',
       prompt
     })
   });
@@ -65,11 +67,16 @@ const createRenderTask = async (baseUrl, imageUrl, prompt) => {
   return payload.data.task;
 };
 
-const pollRenderTask = async (baseUrl, taskId, maxAttempts = 20, intervalMs = 100) => {
+const pollInspirationTask = async (
+  baseUrl,
+  taskId,
+  maxAttempts = 20,
+  intervalMs = 100
+) => {
   let latestTask = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const response = await fetch(`${baseUrl}/api/render/${taskId}`);
+    const response = await fetch(`${baseUrl}/api/inspiration/${taskId}`);
     const payload = await response.json();
 
     assert.equal(response.status, 200);
@@ -103,18 +110,18 @@ const run = async () => {
     await applySchemaMigration();
     uploadResult = await uploadFixtureImage(baseUrl);
 
-    task = await createRenderTask(
+    task = await createInspirationTask(
       baseUrl,
       uploadResult.url,
       'modern concrete villa with warm sunset lighting'
     );
 
-    const failedTask = await pollRenderTask(baseUrl, task.id);
+    const failedTask = await pollInspirationTask(baseUrl, task.id);
 
     assert.ok(failedTask);
     assert.equal(failedTask.id, task.id);
     assert.equal(failedTask.status, 'failed');
-    assert.equal(failedTask.renderStatus, 'failed');
+    assert.equal(failedTask.generationStatus, 'failed');
     assert.equal(failedTask.resultImageUrl, null);
     assert.equal(
       failedTask.optimizedPrompt,
@@ -125,13 +132,13 @@ const run = async () => {
       /does not support image editing/i
     );
 
-    await query('DELETE FROM render_tasks WHERE id = $1', [failedTask.id]);
+    await query('DELETE FROM inspiration_tasks WHERE id = $1', [failedTask.id]);
     task = null;
 
-    console.log('PASS test/render-failure.smoke.js');
+    console.log('PASS test/inspiration-failure.smoke.js');
   } finally {
     if (task?.id) {
-      await query('DELETE FROM render_tasks WHERE id = $1', [task.id]).catch(() => {});
+      await query('DELETE FROM inspiration_tasks WHERE id = $1', [task.id]).catch(() => {});
     }
 
     if (uploadResult?.filePath) {
@@ -155,7 +162,7 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error('FAIL test/render-failure.smoke.js');
+  console.error('FAIL test/inspiration-failure.smoke.js');
   console.error(error);
   process.exitCode = 1;
 });
