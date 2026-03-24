@@ -24,7 +24,7 @@ const featureEntries = [
   {
     href: "/feature-3",
     eyebrow: "Thermal Performance",
-    title: "建筑热工性能分析",
+    title: "建筑性能分析",
     description:
       "围绕遮阳、通风、得热损失与能耗流向，快速形成面向建筑方案的热工分析视图。",
     action: "START",

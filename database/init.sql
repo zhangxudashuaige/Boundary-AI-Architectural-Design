@@ -11,7 +11,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS render_tasks (
   id BIGSERIAL PRIMARY KEY,
   input_image_url TEXT,
-  input_file_url TEXT NOT NULL,
+  input_file_url TEXT,
   input_file_type VARCHAR(32) NOT NULL DEFAULT 'image',
   raw_prompt TEXT NOT NULL,
   render_prompt TEXT NOT NULL,
@@ -160,7 +160,8 @@ WHERE status IS NULL;
 
 UPDATE render_tasks
 SET input_file_url = COALESCE(input_file_url, input_image_url)
-WHERE input_file_url IS NULL;
+WHERE input_file_url IS NULL
+  AND input_image_url IS NOT NULL;
 
 UPDATE render_tasks
 SET input_file_type = 'image'
@@ -194,7 +195,7 @@ ALTER TABLE render_tasks
 ALTER COLUMN input_image_url DROP NOT NULL;
 
 ALTER TABLE render_tasks
-ALTER COLUMN input_file_url SET NOT NULL;
+ALTER COLUMN input_file_url DROP NOT NULL;
 
 ALTER TABLE render_tasks
 ALTER COLUMN input_file_type SET NOT NULL;

@@ -65,6 +65,10 @@ const assertNonEmptyString = (value, fieldName) => {
 };
 
 const normalizeOptionalString = (value, fieldName) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
   if (value === null) {
     return null;
   }
@@ -156,7 +160,7 @@ const resolveCreatePayload = ({
   errorMessage = null
 }) => {
   const normalizedInputFileUrl = normalizeOptionalString(
-    inputFileUrl ?? inputImageUrl,
+    inputFileUrl ?? inputImageUrl ?? null,
     'inputFileUrl'
   );
   const normalizedFileType = normalizeFileType(inputFileType);
@@ -405,10 +409,6 @@ const updateRenderTask = async (id, updates) => {
   }
 
   if (nextUpdates.inputImageUrl !== undefined) {
-    if (nextUpdates.inputImageUrl === null) {
-      throw new Error('inputImageUrl cannot be null');
-    }
-
     nextUpdates.inputImageUrl = normalizeOptionalString(
       nextUpdates.inputImageUrl,
       'inputImageUrl'
@@ -416,10 +416,6 @@ const updateRenderTask = async (id, updates) => {
   }
 
   if (nextUpdates.inputFileUrl !== undefined) {
-    if (nextUpdates.inputFileUrl === null) {
-      throw new Error('inputFileUrl cannot be null');
-    }
-
     nextUpdates.inputFileUrl = normalizeOptionalString(
       nextUpdates.inputFileUrl,
       'inputFileUrl'

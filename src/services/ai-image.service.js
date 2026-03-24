@@ -5,6 +5,8 @@ const DEFAULT_IMAGE_SIZE = '1024*1024';
 const DEFAULT_OUTPUT_FORMAT = 'jpeg';
 const DEFAULT_NUM_IMAGES = 1;
 const DEFAULT_DATA_IMAGE_MIME_TYPE = 'image/png';
+const MOCK_OUTPUT_IMAGE_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0ioAAAAASUVORK5CYII=';
 const OPENAI_IMAGE_ENDPOINTS = ['/v1/images/generations', '/302/images/generations'];
 const GEMINI_IMAGE_ENDPOINT_SUFFIX = '?response_format';
 const TERMINAL_TASK_STATUSES = new Set([
@@ -92,6 +94,18 @@ const isValidOutputImageUrl = (value) =>
 
 const toDataImageUrl = (base64, mimeType = DEFAULT_DATA_IMAGE_MIME_TYPE) =>
   `data:${mimeType};base64,${base64}`;
+
+const buildMockImageGenerationResult = ({ prompt, model }) =>
+  buildServiceResult({
+    success: true,
+    outputImageUrl: toDataImageUrl(MOCK_OUTPUT_IMAGE_BASE64),
+    rawResponse: {
+      provider: 'MOCK',
+      prompt,
+      message: 'Mock image generation completed'
+    },
+    model
+  });
 
 const greatestCommonDivisor = (left, right) => {
   let a = Math.abs(left);
@@ -783,6 +797,13 @@ const generateImage = async ({
   const normalizedSourceImage = normalizeSourceImageInput(sourceImage, imageUrl);
 
   if (env.ai.provider !== '302AI') {
+    if (env.ai.provider === 'MOCK') {
+      return buildMockImageGenerationResult({
+        prompt: normalizedPrompt,
+        model
+      });
+    }
+
     return buildServiceResult({
       success: false,
       outputImageUrl: null,

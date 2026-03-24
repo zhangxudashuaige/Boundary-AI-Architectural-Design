@@ -223,6 +223,69 @@ const testRenderFlow = async (baseUrl, imageUrl) => {
   return fetchedTask;
 };
 
+const testTextOnlyRenderFlow = async (baseUrl) => {
+  const createResponse = await fetch(`${baseUrl}/api/render`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      prompt: 'futuristic architectural concept with glass facade and dusk lighting'
+    })
+  });
+  const createBody = await createResponse.json();
+
+  assert.equal(createResponse.status, 201);
+  assert.equal(createBody.success, true);
+  assert.equal(createBody.data.task.imageUrl, null);
+  assert.equal(createBody.data.task.inputFileUrl, null);
+  assert.equal(createBody.data.task.inputFileType, 'text');
+  assert.equal(
+    createBody.data.task.prompt,
+    'futuristic architectural concept with glass facade and dusk lighting'
+  );
+  assert.equal(
+    createBody.data.task.renderPrompt,
+    'futuristic architectural concept with glass facade and dusk lighting'
+  );
+  assert.equal(createBody.data.task.analysisStatus, 'skipped');
+  assert.equal(createBody.data.task.renderStatus, 'pending');
+  assert.match(createBody.data.task.status, /^(pending|processing)$/);
+
+  const taskId = createBody.data.task.id;
+  let fetchedTask = null;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await fetch(`${baseUrl}/api/render/${taskId}`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+
+    fetchedTask = body.data.task;
+
+    if (fetchedTask.status === 'completed') {
+      break;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
+  }
+
+  assert.ok(fetchedTask);
+  assert.equal(fetchedTask.id, taskId);
+  assert.equal(fetchedTask.status, 'completed');
+  assert.equal(fetchedTask.imageUrl, null);
+  assert.equal(fetchedTask.inputFileUrl, null);
+  assert.equal(fetchedTask.inputFileType, 'text');
+  assert.equal(fetchedTask.analysisStatus, 'skipped');
+  assert.equal(fetchedTask.renderStatus, 'completed');
+  assert.match(fetchedTask.resultImageUrl, /^data:image\/png;base64,/);
+
+  return fetchedTask;
+};
+
 const testRenderHistory = async (baseUrl, expectedTaskId) => {
   const response = await fetch(`${baseUrl}/api/render?limit=10&offset=0`);
   const body = await response.json();
@@ -272,6 +335,7 @@ const testDeleteRenderTask = async (baseUrl, taskId) => {
 const run = async () => {
   const server = app.listen(0, '127.0.0.1');
   let uploadResult = null;
+  let textOnlyTask = null;
 
   try {
     await once(server, 'listening');
@@ -285,6 +349,10 @@ const run = async () => {
     await testCors(baseUrl);
     await testPromptRefine(baseUrl);
     await testPromptRefineValidation(baseUrl);
+    textOnlyTask = await testTextOnlyRenderFlow(baseUrl);
+    await testRenderResultDownload(baseUrl, textOnlyTask.id);
+    await testDeleteRenderTask(baseUrl, textOnlyTask.id);
+    textOnlyTask = null;
     uploadResult = await testUpload(baseUrl);
     const renderedTask = await testRenderFlow(baseUrl, uploadResult.url);
     await testRenderHistory(baseUrl, renderedTask.id);
@@ -293,6 +361,10 @@ const run = async () => {
 
     console.log('PASS test/api.smoke.js');
   } finally {
+    if (textOnlyTask?.id) {
+      await query('DELETE FROM render_tasks WHERE id = $1', [textOnlyTask.id]).catch(() => {});
+    }
+
     if (uploadResult) {
       const savedFilePath = path.join(process.cwd(), uploadResult.filePath);
       await fs.unlink(savedFilePath).catch(() => {});

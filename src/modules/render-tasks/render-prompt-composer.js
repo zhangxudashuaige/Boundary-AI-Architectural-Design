@@ -25,7 +25,8 @@ const buildRenderEditPrompt = ({
   userPrompt,
   rawPrompt,
   appearancePrompt,
-  geometryConstraint
+  geometryConstraint,
+  hasSourceImage = true
 } = {}) => {
   const resolvedRawPrompt =
     normalizeNonEmptyString(rawPrompt) || normalizeNonEmptyString(userPrompt);
@@ -38,12 +39,18 @@ const buildRenderEditPrompt = ({
     throw new Error('userPrompt is required to build a render edit prompt');
   }
 
-  const promptSections = [
-    'Use the input image as the hard geometry reference for architectural rendering.',
-    'This is a render enhancement task, not a redesign task.',
-    'Preserve the original building massing, silhouette, proportions, openings, roofline, cantilever relationships, and camera composition.',
-    'If visual information is ambiguous, keep the original geometry and viewpoint instead of inventing a new building.'
-  ];
+  const promptSections = hasSourceImage
+    ? [
+        'Use the input image as the hard geometry reference for architectural rendering.',
+        'This is a render enhancement task, not a redesign task.',
+        'Preserve the original building massing, silhouette, proportions, openings, roofline, cantilever relationships, and camera composition.',
+        'If visual information is ambiguous, keep the original geometry and viewpoint instead of inventing a new building.'
+      ]
+    : [
+        'Generate a high-quality architectural image based only on the user requirements.',
+        'There is no source image for this task, so you should create a new image rather than edit an existing one.',
+        'Keep the composition, massing, facade logic, materials, and atmosphere coherent with the user requirements.'
+      ];
 
   const geometrySections = [
     ['Geometry summary', normalizeNonEmptyString(geometryConstraint?.summary)],

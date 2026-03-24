@@ -1,5 +1,6 @@
 const { logger } = require('../../config/logger');
 const { env } = require('../../config/env');
+const { generateImage } = require('../../services/ai-image.service');
 const { downloadImage } = require('../../services/image-download.service');
 const { editImage } = require('../../services/image-edit.service');
 const {
@@ -29,6 +30,11 @@ const getTaskRawPrompt = (task) =>
   normalizeNonEmptyString(task.renderPrompt) ||
   '';
 
+const getTaskSourceImageUrl = (task) =>
+  normalizeNonEmptyString(task.inputImageUrl) ||
+  normalizeNonEmptyString(task.inputFileUrl) ||
+  null;
+
 const getTaskGeometryConstraint = (task) => {
   const geometryConstraint = task?.analysisResult?.geometryConstraint;
 
@@ -56,6 +62,7 @@ const resolvePreferredTaskPrompt = async (task) => {
   const refinedPrompt = renderPrompt !== rawPrompt ? renderPrompt : null;
   const prompt = renderPrompt;
   const geometryConstraint = getTaskGeometryConstraint(task);
+  const hasSourceImage = Boolean(getTaskSourceImageUrl(task));
 
   return {
     rawPrompt,
@@ -63,11 +70,13 @@ const resolvePreferredTaskPrompt = async (task) => {
     renderPrompt,
     prompt,
     geometryConstraint,
+    hasSourceImage,
     editPrompt: buildRenderEditPrompt({
       userPrompt: renderPrompt,
       rawPrompt,
       appearancePrompt: refinedPrompt,
-      geometryConstraint
+      geometryConstraint,
+      hasSourceImage
     })
   };
 };
@@ -145,6 +154,7 @@ const resolveSerializedPromptBundle = (task) => {
     normalizeNonEmptyString(task.optimizedPrompt) || renderPrompt;
   const promptSource = renderPrompt !== rawPrompt ? 'refinedPrompt' : 'rawPrompt';
   const geometryConstraint = getTaskGeometryConstraint(task);
+  const hasSourceImage = Boolean(getTaskSourceImageUrl(task));
 
   return {
     rawPrompt,
@@ -156,7 +166,8 @@ const resolveSerializedPromptBundle = (task) => {
       userPrompt: renderPrompt,
       rawPrompt,
       appearancePrompt: renderPrompt !== rawPrompt ? renderPrompt : null,
-      geometryConstraint
+      geometryConstraint,
+      hasSourceImage
     })
   };
 };
@@ -208,7 +219,7 @@ const resolveTaskWithGeometryAnalysis = async (task) => {
     return task;
   }
 
-  const imageUrl = task.inputImageUrl || task.inputFileUrl;
+  const imageUrl = getTaskSourceImageUrl(task);
 
   if (!normalizeNonEmptyString(imageUrl)) {
     return task;
@@ -245,8 +256,8 @@ const resolveTaskWithGeometryAnalysis = async (task) => {
 
 const runRenderPipeline = async (task) => {
   let activeTask = task;
-  const imageUrl = task.inputImageUrl || task.inputFileUrl;
-  let editResult = null;
+  const imageUrl = getTaskSourceImageUrl(task);
+  let renderResult = null;
 
   try {
     activeTask = await resolveTaskWithGeometryAnalysis(task);
@@ -257,7 +268,8 @@ const runRenderPipeline = async (task) => {
       renderPrompt,
       prompt,
       editPrompt,
-      geometryConstraint
+      geometryConstraint,
+      hasSourceImage
     } = await resolvePreferredTaskPrompt(activeTask);
 
     logger.info(
@@ -266,6 +278,7 @@ const runRenderPipeline = async (task) => {
         provider: env.ai.provider,
         model: env.ai.imageModel,
         imageUrl,
+        renderMode: hasSourceImage ? 'image-edit' : 'text-to-image',
         promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt',
         editPromptLength: editPrompt.length
       },
@@ -290,6 +303,7 @@ const runRenderPipeline = async (task) => {
       {
         taskId: activeTask.id,
         promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt',
+        renderMode: hasSourceImage ? 'image-edit' : 'text-to-image',
         rawPrompt,
         renderPrompt,
         optimizedPrompt: prompt,
@@ -305,19 +319,29 @@ const runRenderPipeline = async (task) => {
         provider: env.ai.provider,
         model: env.ai.imageModel,
         imageUrl,
+        renderMode: hasSourceImage ? 'image-edit' : 'text-to-image',
         promptSource: refinedPrompt ? 'refinedPrompt' : 'rawPrompt',
         editPromptLength: editPrompt.length
       },
-      'Starting image edit render pipeline'
+      hasSourceImage
+        ? 'Starting image edit render pipeline'
+        : 'Starting text-to-image render pipeline'
     );
 
-    editResult = await editImage({
-      imageUrl,
-      prompt: editPrompt
-    });
+    renderResult = hasSourceImage
+      ? await editImage({
+          imageUrl,
+          prompt: editPrompt
+        })
+      : await generateImage({
+          prompt: editPrompt
+        });
 
-    if (!editResult.success || !editResult.outputImageUrl) {
-      throw new Error(editResult.errorMessage || 'Image edit render failed');
+    if (!renderResult.success || !renderResult.outputImageUrl) {
+      throw new Error(
+        renderResult.errorMessage ||
+          (hasSourceImage ? 'Image edit render failed' : 'Text-to-image render failed')
+      );
     }
 
     const completedTask = await updateRenderTaskStatus(
@@ -325,7 +349,7 @@ const runRenderPipeline = async (task) => {
       RENDER_TASK_STATUS.COMPLETED,
       {
         optimizedPrompt: prompt,
-        resultImageUrl: editResult.outputImageUrl,
+        resultImageUrl: renderResult.outputImageUrl,
         errorMessage: null
       }
     );
@@ -338,12 +362,14 @@ const runRenderPipeline = async (task) => {
     logger.info(
       {
         taskId: activeTask.id,
-        provider: editResult.provider || env.ai.provider,
-        model: editResult.model || env.ai.imageModel,
-        strategy: editResult.strategy || null,
-        outputImageUrl: summarizeOutputImageUrlForLog(editResult.outputImageUrl)
+        provider: renderResult.provider || env.ai.provider,
+        model: renderResult.model || env.ai.imageModel,
+        strategy: renderResult.strategy || null,
+        outputImageUrl: summarizeOutputImageUrlForLog(renderResult.outputImageUrl)
       },
-      'Image edit render succeeded'
+      hasSourceImage
+        ? 'Image edit render succeeded'
+        : 'Text-to-image render succeeded'
     );
   } catch (error) {
     const { prompt } = await resolvePreferredTaskPrompt(activeTask);
@@ -354,9 +380,9 @@ const runRenderPipeline = async (task) => {
         taskId: activeTask.id,
         imageUrl,
         rawPrompt: getTaskRawPrompt(activeTask),
-        ...summarizeImageEditFailure(editResult)
+        ...summarizeImageEditFailure(renderResult)
       },
-      'Image edit render failed'
+      imageUrl ? 'Image edit render failed' : 'Text-to-image render failed'
     );
 
     await markRenderTaskFailed(activeTask.id, {
@@ -367,25 +393,26 @@ const runRenderPipeline = async (task) => {
 };
 
 const createRenderJob = async ({ imageUrl, prompt, rawPrompt, refinedPrompt }) => {
-  assertRequiredString(imageUrl, 'imageUrl');
   assertRequiredString(prompt, 'prompt');
+  const normalizedImageUrl = normalizeNonEmptyString(imageUrl);
   const normalizedRawPrompt =
     normalizeNonEmptyString(rawPrompt) || prompt.trim();
   const normalizedRenderPrompt = prompt.trim();
   const normalizedRefinedPrompt = normalizeNonEmptyString(refinedPrompt);
   const optimizedPrompt = normalizedRenderPrompt;
+  const hasSourceImage = Boolean(normalizedImageUrl);
 
   const task = await createRenderTask({
-    inputFileUrl: imageUrl.trim(),
-    inputFileType: 'image',
-    inputImageUrl: imageUrl.trim(),
+    inputFileUrl: normalizedImageUrl,
+    inputFileType: hasSourceImage ? 'image' : 'text',
+    inputImageUrl: normalizedImageUrl,
     renderPrompt: normalizedRenderPrompt,
     rawPrompt: normalizedRawPrompt,
-    analysisRequest: isGeometryAnalysisEnabled()
+    analysisRequest: hasSourceImage && isGeometryAnalysisEnabled()
       ? `geometry-constraint:${env.ai.geometryModel}`
       : null,
     optimizedPrompt,
-    analysisStatus: isGeometryAnalysisEnabled()
+    analysisStatus: hasSourceImage && isGeometryAnalysisEnabled()
       ? TASK_STAGE_STATUS.PENDING
       : TASK_STAGE_STATUS.SKIPPED,
     renderStatus: TASK_STAGE_STATUS.PENDING,
@@ -398,6 +425,7 @@ const createRenderJob = async ({ imageUrl, prompt, rawPrompt, refinedPrompt }) =
       provider: env.ai.provider,
       model: env.ai.imageModel,
       imageUrl: task.inputFileUrl,
+      renderMode: hasSourceImage ? 'image-edit' : 'text-to-image',
       promptSource:
         normalizedRefinedPrompt || optimizedPrompt !== normalizedRawPrompt
           ? 'refinedPrompt'

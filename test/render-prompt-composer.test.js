@@ -69,6 +69,20 @@ test('buildRenderEditPrompt appends geometry constraints when available', () => 
   assert.match(result, /Forbidden redesigns: no curtain-wall office tower; no orthogonal stacked floors/u);
 });
 
+test('buildRenderEditPrompt supports text-to-image tasks without a source image', () => {
+  const result = buildRenderEditPrompt({
+    rawPrompt: '生成一张未来主义建筑夜景效果图，玻璃幕墙与暖光氛围',
+    hasSourceImage: false
+  });
+
+  assert.match(result, /Generate a high-quality architectural image based only on the user requirements/u);
+  assert.match(result, /There is no source image for this task/u);
+  assert.match(
+    result,
+    /Original user requirements \(highest priority\): 生成一张未来主义建筑夜景效果图，玻璃幕墙与暖光氛围/u
+  );
+});
+
 test('buildRenderEditPrompt rejects empty input', () => {
   assert.throws(
     () => buildRenderEditPrompt({ userPrompt: '   ', rawPrompt: '' }),

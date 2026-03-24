@@ -24,8 +24,6 @@ const META_UPLOADING = "\u4e0a\u4f20\u4e2d";
 const META_UPLOADED = "\u5df2\u4e0a\u4f20";
 const META_UPLOAD_FAILED = "\u4e0a\u4f20\u5931\u8d25";
 
-const ERROR_UPLOAD_FIRST =
-  "\u8bf7\u5148\u4e0a\u4f20\u56fe\u7247\uff0c\u4e0a\u4f20\u6210\u529f\u540e\u518d\u5f00\u59cb\u6e32\u67d3\u3002";
 const ERROR_PROMPT_REQUIRED =
   "\u8bf7\u8f93\u5165\u539f\u59cb\u63cf\u8ff0\uff0c\u6216\u586b\u5199 AI \u4f18\u5316\u540e\u63cf\u8ff0\u3002";
 const ERROR_PROMPT_BEFORE_RENDER =
@@ -51,11 +49,33 @@ function revokePreviewUrl(url) {
   }
 }
 
-function normalizeRestoredStatus(snapshot) {
-  if (!snapshot?.imageUrl) {
-    return "idle";
-  }
+function hasPromptInput(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
 
+function hasSourceImage(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function hasWorkspaceInput({
+  imageUrl = "",
+  fileUrl = "",
+  previewUrl = "",
+  rawPrompt = "",
+  refinedPrompt = "",
+  prompt = ""
+} = {}) {
+  return (
+    hasSourceImage(imageUrl) ||
+    hasSourceImage(fileUrl) ||
+    hasSourceImage(previewUrl) ||
+    hasPromptInput(rawPrompt) ||
+    hasPromptInput(refinedPrompt) ||
+    hasPromptInput(prompt)
+  );
+}
+
+function normalizeRestoredStatus(snapshot) {
   if (snapshot.status === "generating" && snapshot.taskId) {
     return "generating";
   }
@@ -68,7 +88,7 @@ function normalizeRestoredStatus(snapshot) {
     return "error";
   }
 
-  return "ready";
+  return hasWorkspaceInput(snapshot) ? "ready" : "idle";
 }
 
 function resolveResultPreviewUrl(taskResultImageUrl, fallbackImageUrl) {
@@ -283,20 +303,48 @@ export function useHomeWorkspace() {
 
   function handlePromptChange(event) {
     const nextPrompt = event.target.value;
+    let nextRawPrompt = rawPrompt;
+    let nextRefinedPrompt = refinedPrompt;
 
     cancelPendingPromptRefine();
     setPromptRefineError("");
     if (promptInputMode === "refined") {
       if (nextPrompt === "") {
+        nextRawPrompt = "";
+        nextRefinedPrompt = "";
         setRawPrompt("");
         setRefinedPrompt("");
         setPromptInputMode("raw");
       } else {
+        nextRefinedPrompt = nextPrompt;
         setRefinedPrompt(nextPrompt);
       }
     } else {
+      nextRawPrompt = nextPrompt;
       setRawPrompt(nextPrompt);
     }
+
+    if (!taskId && status !== "generating") {
+      const nextRequest = buildRenderTaskRequest({
+        imageUrl,
+        rawPrompt: nextRawPrompt,
+        refinedPrompt: promptInputMode === "refined" ? nextRefinedPrompt : ""
+      });
+
+      setStatus(
+        hasWorkspaceInput({
+          imageUrl,
+          fileUrl,
+          previewUrl,
+          rawPrompt: nextRawPrompt,
+          refinedPrompt: nextRefinedPrompt,
+          prompt: nextRequest.prompt
+        })
+          ? "ready"
+          : "idle"
+      );
+    }
+
     clearPromptErrorIfNeeded(nextPrompt);
   }
 
@@ -334,6 +382,21 @@ export function useHomeWorkspace() {
       setPromptInputMode("refined");
       setPromptRefineError("");
       setPromptError("");
+
+      if (!taskId && status !== "generating") {
+        setStatus(
+          hasWorkspaceInput({
+            imageUrl,
+            fileUrl,
+            previewUrl,
+            rawPrompt: rawPrompt || sourcePrompt,
+            refinedPrompt: result.refinedPrompt,
+            prompt: result.refinedPrompt
+          })
+            ? "ready"
+            : "idle"
+        );
+      }
     } catch (error) {
       if (error?.name === "AbortError") {
         return;
@@ -458,9 +521,10 @@ export function useHomeWorkspace() {
 
     let nextRenderError = "";
     let nextPromptError = "";
+    const hasPendingImageUpload = Boolean(previewUrl && !imageUrl);
 
-    if (!imageUrl) {
-      nextRenderError = ERROR_UPLOAD_FIRST;
+    if (hasPendingImageUpload) {
+      nextRenderError = uploadError || ERROR_UPLOAD_RETRY;
     }
 
     if (!renderTaskRequest.prompt) {
@@ -515,7 +579,18 @@ export function useHomeWorkspace() {
 
       setTaskId("");
       setBackendTaskStatus("");
-      setStatus(imageUrl ? "ready" : "idle");
+      setStatus(
+        hasWorkspaceInput({
+          imageUrl,
+          fileUrl,
+          previewUrl,
+          rawPrompt,
+          refinedPrompt,
+          prompt: renderTaskRequest.prompt
+        })
+          ? "ready"
+          : "idle"
+      );
       setRenderError(error.message || ERROR_CREATE_TASK_RETRY);
     } finally {
       if (createTaskAbortRef.current === controller) {
@@ -611,7 +686,11 @@ export function useHomeWorkspace() {
     isPolling,
     promptValue,
     isPromptRefined: promptInputMode === "refined" && Boolean(refinedPrompt.trim()),
-    canStart: !isUploading && !isCreatingTask && status !== "generating",
+    canStart:
+      !isUploading &&
+      !isCreatingTask &&
+      status !== "generating" &&
+      Boolean(renderTaskRequest.prompt),
     hasImage: Boolean(imageUrl || previewUrl),
     handlePromptChange,
     handleRefinePrompt,

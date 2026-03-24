@@ -2,8 +2,8 @@ import { Panel } from "@/components/ui/panel";
 
 const statusMap = {
   idle: {
-    title: "创建你的第一个作品",
-    description: "上传图片并输入描述后，这里会显示生成结果。"
+    title: "创建你的第一张作品",
+    description: "上传参考图片并输入描述，或直接输入提示词后，这里会显示生成结果。"
   },
   ready: {
     title: "可以开始创作",
