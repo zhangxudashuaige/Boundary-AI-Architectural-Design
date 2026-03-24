@@ -1,85 +1,31 @@
 import Image from "next/image";
 import Link from "next/link";
 
-const featureEntries = [
-  {
-    href: "/render",
-    eyebrow: "Plan Inspiration",
-    title: "ai模型发散",
-    description: "为平面图和立体图提供灵感辅助",
-    action: "START",
-    imageSrc: "/picture/model-divergence-reference.jpeg",
-    imageAlt: "ai模型发散预览图"
-  },
-  {
-    href: "/feature-2",
-    eyebrow: "Rendering",
-    title: "ai建筑渲染",
-    description:
-      "对用户输入的建筑模型进行智能渲染，生成高质量的视觉效果。",
-    action: "START",
-    imageSrc: "/picture/render-preview-reference.png",
-    imageAlt: "智能建筑渲染预览图"
-  },
-  {
-    href: "/feature-3",
-    eyebrow: "Thermal Performance",
-    title: "建筑性能分析",
-    description:
-      "围绕遮阳、通风、得热损失与能耗流向，快速形成面向建筑方案的热工分析视图。",
-    action: "START",
-    imageSrc: "/picture/thermal-performance-reference.png",
-    imageAlt: "建筑热工性能分析预览图"
-  }
-];
-
 export default function HomePage() {
   return (
-    <div className="space-y-8">
-      <section className="grid gap-5 xl:grid-cols-3">
-        {featureEntries.map((item) => (
-          <article
-            key={item.href}
-            className="ui-gallery-card flex min-h-[680px] h-full flex-col overflow-hidden p-0"
+    <div className="flex min-h-[calc(100vh-180px)] items-center justify-center">
+      <section className="w-full max-w-[1380px] space-y-6">
+        <div className="ui-stage-shell overflow-hidden p-3 md:p-5">
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-[28px] bg-white">
+            <Image
+              src="/picture/workflow-overview.jpg"
+              alt="Workflow overview"
+              fill
+              priority
+              sizes="(min-width: 1536px) 1360px, (min-width: 768px) 92vw, 96vw"
+              className="object-contain"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-center">
+          <Link
+            href="/render"
+            className="inline-flex min-w-[180px] items-center justify-center rounded-full border border-black bg-black px-8 py-4 text-base font-semibold uppercase tracking-[0.24em] text-white shadow-[0_18px_44px_rgba(0,0,0,0.18)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#161616]"
           >
-            <div className="ui-gallery-media flex min-h-[340px] items-center p-5 md:min-h-[380px] md:p-6">
-              <div className="flex h-full w-full items-center justify-center">
-                <div className="ui-feature-preview-shell">
-                  <Image
-                    src={item.imageSrc}
-                    alt={item.imageAlt}
-                    fill
-                    sizes="(min-width: 1280px) 30vw, 100vw"
-                    className="object-contain p-4"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-1 flex-col justify-between p-5">
-              <div className="space-y-4">
-                <span className="ui-chip-accent">{item.eyebrow}</span>
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-semibold text-slate-950">
-                    {item.title}
-                  </h2>
-                  <p className="text-sm leading-7 text-slate-600">
-                    {item.description}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-8">
-                <Link
-                  href={item.href}
-                  className="ui-button-secondary w-full justify-center rounded-[22px]"
-                >
-                  {item.action}
-                </Link>
-              </div>
-            </div>
-          </article>
-        ))}
+            Start
+          </Link>
+        </div>
       </section>
     </div>
   );

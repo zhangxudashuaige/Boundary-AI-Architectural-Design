@@ -3,12 +3,12 @@
 @tailwind utilities;
 
 html {
-  background: #f6f6f2;
+  background: #000;
 }
 
 body {
   min-height: 100vh;
-  background: #f6f6f2;
+  background: #000;
   color: #121212;
   color-scheme: light;
   overflow-x: hidden;
@@ -19,11 +19,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
-  background-size: 64px 64px;
-  opacity: 0.35;
+  background: transparent;
 }
 
 a {
