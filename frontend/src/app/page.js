@@ -8,7 +8,7 @@ export default function HomePage() {
         <div className="ui-stage-shell overflow-hidden p-3 md:p-5">
           <div className="relative aspect-[16/9] w-full overflow-hidden rounded-[28px] bg-white">
             <Image
-              src="/picture/workflow-overview.jpg"
+              src="/picture/workflow-overview-v2.png"
               alt="Workflow overview"
               fill
               priority
