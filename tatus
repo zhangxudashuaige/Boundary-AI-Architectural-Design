@@ -1,0 +1,47 @@
+[33mcommit 348958eea1e38989d10d5f7440dcc28a73070c2a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: zhangxu <508036420@qq.com>
+Date:   Wed Mar 25 18:17:05 2026 +0800
+
+    version 1.3
+
+[33mcommit 4f2e4dffc60bc2c6d2b94d1f0fcc8648165be38e[m
+Author: zhangxu <508036420@qq.com>
+Date:   Wed Mar 25 00:15:20 2026 +0800
+
+    1.2
+
+[33mcommit 3d8f1599ca9796728d8f50b99145af44ec39f95a[m
+Author: zhangxu <508036420@qq.com>
+Date:   Tue Mar 24 11:58:55 2026 +0800
+
+    这一版允许用户只输入文字
+
+[33mcommit be273308883bb9b48871968c7b9d5ddd22d42262[m
+Author: zhangxu <508036420@qq.com>
+Date:   Mon Mar 23 22:48:24 2026 +0800
+
+    3-23 22点，使用的ai优化prompt和图片结构分析，然后使用1.5生成图片
+
+[33mcommit 54c30361855647623491f5af5512b7f445ca4185[m
+Author: zhangxu <508036420@qq.com>
+Date:   Mon Mar 23 11:37:25 2026 +0800
+
+    第一版最终one shot
+
+[33mcommit ed80cbf39e39531f1e0ac29a35f8c69796c41817[m
+Author: zhangxu <508036420@qq.com>
+Date:   Mon Mar 23 11:23:35 2026 +0800
+
+    one shot
+
+[33mcommit 5a4809cec3d0f1f0370f763056aaa21da1f69fd8[m
+Author: zhangxu <508036420@qq.com>
+Date:   Mon Mar 23 10:56:01 2026 +0800
+
+    完成了前端界面和渲染功能的one shot
+
+[33mcommit f259be68ff10813bb294a9c5b280243904085d84[m
+Author: zhangxu <508036420@qq.com>
+Date:   Sun Mar 22 14:02:52 2026 +0800
+
+    初版1
