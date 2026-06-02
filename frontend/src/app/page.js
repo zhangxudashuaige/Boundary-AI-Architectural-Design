@@ -3,59 +3,36 @@ import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <div className="flex min-h-[calc(100vh-180px)] items-center">
-      <section className="w-full space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-stretch md:gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="ui-stage-shell overflow-hidden p-3 md:h-full md:p-5">
-              <div className="relative aspect-[16/9] w-full overflow-hidden rounded-[28px] bg-white">
-                <Image
-                  src="/picture/workflow-overview-v2.png"
-                  alt="Workflow overview"
-                  fill
-                  priority
-                  sizes="(min-width: 1536px) 1320px, (min-width: 768px) calc(100vw - 180px), 96vw"
-                  className="object-contain"
-                />
-              </div>
-            </div>
-          </div>
+    <section className="relative min-h-screen overflow-hidden bg-black text-white">
+      <Image
+        src="/picture/baad-hero-background.png"
+        alt="BAAD aerial architecture hero"
+        fill
+        priority
+        sizes="100vw"
+        className="object-cover"
+      />
 
-          <div className="hidden md:flex md:self-stretch md:items-start md:pt-2">
-            <Link
-              href="/render"
-              aria-label="Start"
-              className="inline-flex h-1/2 shrink-0 transition duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-            >
-              <Image
-                src="/picture/start-sidebar-tight.png"
-                alt=""
-                width={496}
-                height={1744}
-                sizes="(min-width: 768px) 100px"
-                className="h-full w-auto object-contain"
-              />
-            </Link>
-          </div>
-        </div>
+      <div className="absolute left-[2vw] top-[5.6vh] z-10 max-w-[52vw] font-display text-[clamp(1.15rem,1.9vw,2.15rem)] leading-none">
+        Boundary AI Architectural Design
+      </div>
 
-        <div className="flex justify-end md:hidden">
-          <Link
-            href="/render"
-            aria-label="Start"
-            className="inline-flex h-[180px] shrink-0 transition duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            <Image
-              src="/picture/start-sidebar-tight.png"
-              alt=""
-              width={496}
-              height={1744}
-              sizes="52px"
-              className="h-full w-auto object-contain"
-            />
-          </Link>
+      <div className="absolute right-[1.6vw] top-[5.4vh] z-10 max-w-[42vw] text-right text-white">
+        <div className="font-sans text-[clamp(1.15rem,1.9vw,2.15rem)] font-medium leading-none">
+          极光工作室
         </div>
-      </section>
-    </div>
+        <div className="mt-3 font-sans text-[clamp(0.8rem,1.35vw,1.55rem)] font-medium uppercase leading-none">
+          AURORA STUDIO
+        </div>
+      </div>
+
+      <Link
+        href="/render"
+        className="absolute left-1/2 top-[65%] z-10 -translate-x-1/2 whitespace-nowrap text-center text-[clamp(2.1rem,4vw,4.5rem)] leading-none text-white transition duration-200 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+        style={{ fontFamily: '"Monotype Corsiva", cursive' }}
+      >
+        BEGIN DESIGNING
+      </Link>
+    </section>
   );
 }
