@@ -1,33 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { RenderHistoryList } from "@/components/history/render-history-list";
 import { ActionPanel } from "@/components/home/action-panel";
 import { PromptInput } from "@/components/home/prompt-input";
 import { RenderResult } from "@/components/home/render-result";
+import { StyleList } from "@/components/home/style-list";
 import { UploadPanel } from "@/components/home/upload-panel";
 import { useHomeWorkspace } from "@/hooks/use-home-workspace";
-
-function HistoryToggle({ isOpen, onToggle }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex w-full items-center justify-between gap-4 text-left"
-    >
-      <div>
-        <p className="ui-section-kicker">History</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-950 md:text-3xl">
-          历史记录
-        </h2>
-      </div>
-
-      <span className="inline-flex items-center rounded-full border border-black/12 bg-white px-4 py-2 text-sm text-slate-900">
-        {isOpen ? "收起" : "展开"}
-      </span>
-    </button>
-  );
-}
 
 export function HomeWorkspace() {
   const {
@@ -56,7 +34,6 @@ export function HomeWorkspace() {
     handleStartRender,
     handleDownloadResult
   } = useHomeWorkspace();
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const historyRefreshKey =
     status === "success" || status === "error"
@@ -64,10 +41,10 @@ export function HomeWorkspace() {
       : "";
 
   return (
-    <div className="space-y-8">
-      <section className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)] xl:items-start">
-        <aside className="space-y-5 xl:sticky xl:top-24">
-          <div className="space-y-6">
+    <div className="min-h-screen bg-[#070707] text-white">
+      <div className="mx-auto grid min-h-screen w-full max-w-[1920px] gap-3 p-3 lg:grid-cols-[300px_minmax(0,1fr)_210px] xl:gap-4 xl:p-4 2xl:grid-cols-[340px_minmax(0,1fr)_240px]">
+        <aside className="flex min-h-[720px] flex-col rounded-[24px] border border-white/10 bg-[#111111] p-4 lg:min-h-[calc(100vh-2rem)] xl:p-5">
+          <div className="space-y-5">
             <UploadPanel
               previewUrl={previewUrl}
               imageUrl={imageUrl}
@@ -76,6 +53,7 @@ export function HomeWorkspace() {
               onSelectImage={handleSelectImage}
               onClearImage={handleClearImage}
             />
+
             <PromptInput
               promptValue={promptValue}
               isPromptRefined={isPromptRefined}
@@ -85,17 +63,18 @@ export function HomeWorkspace() {
               onPromptChange={handlePromptChange}
               onRefine={handleRefinePrompt}
             />
-            <ActionPanel
-              status={status}
-              canStart={canStart}
-              isUploading={isUploading}
-              isCreatingTask={isCreatingTask}
-              onStartRender={handleStartRender}
-            />
           </div>
+
+          <ActionPanel
+            status={status}
+            canStart={canStart}
+            isUploading={isUploading}
+            isCreatingTask={isCreatingTask}
+            onStartRender={handleStartRender}
+          />
         </aside>
 
-        <div className="min-w-0 space-y-5">
+        <main className="min-w-0">
           <RenderResult
             status={status}
             resultUrl={resultUrl}
@@ -104,22 +83,15 @@ export function HomeWorkspace() {
             downloadError={downloadError}
             isDownloading={isDownloading}
             onDownload={handleDownloadResult}
+            canRegenerate={canStart}
+            isCreatingTask={isCreatingTask}
+            onRegenerate={handleStartRender}
+            historyRefreshKey={historyRefreshKey}
           />
-        </div>
-      </section>
+        </main>
 
-      <section className="ui-stage-shell p-4 md:p-5 lg:p-6">
-        <HistoryToggle
-          isOpen={isHistoryOpen}
-          onToggle={() => setIsHistoryOpen((value) => !value)}
-        />
-
-        {isHistoryOpen ? (
-          <div className="mt-6">
-            <RenderHistoryList refreshKey={historyRefreshKey} />
-          </div>
-        ) : null}
-      </section>
+        <StyleList />
+      </div>
     </div>
   );
 }

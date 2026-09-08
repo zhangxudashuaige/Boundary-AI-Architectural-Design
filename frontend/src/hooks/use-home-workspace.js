@@ -301,8 +301,8 @@ export function useHomeWorkspace() {
     }
   }
 
-  function handlePromptChange(event) {
-    const nextPrompt = event.target.value;
+  function handlePromptChange(input) {
+    const nextPrompt = typeof input === "string" ? input : input.target.value;
     let nextRawPrompt = rawPrompt;
     let nextRefinedPrompt = refinedPrompt;
 
