@@ -2,6 +2,7 @@ const { logger } = require('../../config/logger');
 const { env } = require('../../config/env');
 const { generateImage } = require('../../services/ai-image.service');
 const { downloadImage } = require('../../services/image-download.service');
+const { persistGeneratedImage } = require('../../services/generated-image-storage.service');
 const { editImage } = require('../../services/image-edit.service');
 const {
   extractGeometryConstraint,
@@ -344,12 +345,20 @@ const runRenderPipeline = async (task) => {
       );
     }
 
+    const resultImageUrl = (renderResult.provider || env.ai.provider) === 'MOCK'
+      ? renderResult.outputImageUrl
+      : await persistGeneratedImage({
+          imageUrl: renderResult.outputImageUrl,
+          taskId: activeTask.id,
+          fileNamePrefix: 'render-result'
+        });
+
     const completedTask = await updateRenderTaskStatus(
       activeTask.id,
       RENDER_TASK_STATUS.COMPLETED,
       {
         optimizedPrompt: prompt,
-        resultImageUrl: renderResult.outputImageUrl,
+        resultImageUrl,
         errorMessage: null
       }
     );

@@ -1,6 +1,7 @@
 const { logger } = require('../../config/logger');
 const { env } = require('../../config/env');
 const { downloadImage } = require('../../services/image-download.service');
+const { persistGeneratedImage } = require('../../services/generated-image-storage.service');
 const { editImage } = require('../../services/image-edit.service');
 const { AppError } = require('../../utils/AppError');
 const {
@@ -214,11 +215,19 @@ const runInspirationPipeline = async (task) => {
       throw new Error(editResult.errorMessage || 'Inspiration image generation failed');
     }
 
+    const resultImageUrl = (editResult.provider || env.ai.provider) === 'MOCK'
+      ? editResult.outputImageUrl
+      : await persistGeneratedImage({
+          imageUrl: editResult.outputImageUrl,
+          taskId: task.id,
+          fileNamePrefix: 'inspiration-result'
+        });
+
     const completedTask = await updateGenerationTaskStatus(
       task.id,
       INSPIRATION_TASK_STATUS.COMPLETED,
       {
-        resultImageUrl: editResult.outputImageUrl,
+        resultImageUrl,
         errorMessage: null
       }
     );
